@@ -109,14 +109,12 @@ function closeSidebar() {
 export function showCommentForm(quote) {
   openSidebar();
 
-  const commenter = getCommenter();
-  if (!commenter) {
+  if (!getCommenter()) {
     const nameInput = _sidebar.querySelector(".fb-name-input");
-    nameInput.focus();
     nameInput.style.outline = "2px solid #ef4444";
     setTimeout(() => (nameInput.style.outline = ""), 2000);
-    return;
   }
+
   _pendingQuote = quote;
   _formEl.style.display = "";
   _formEl.innerHTML = `
@@ -134,6 +132,13 @@ export function showCommentForm(quote) {
   textarea.focus();
 
   _formEl.querySelector(".fb-submit-btn").addEventListener("click", () => {
+    if (!getCommenter()) {
+      const nameInput = _sidebar.querySelector(".fb-name-input");
+      nameInput.focus();
+      nameInput.style.outline = "2px solid #ef4444";
+      setTimeout(() => (nameInput.style.outline = ""), 2000);
+      return;
+    }
     const comment = textarea.value.trim();
     if (!comment) return;
     _onSubmit({ comment, commenter: getCommenter() });
