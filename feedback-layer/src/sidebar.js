@@ -40,7 +40,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve }) {
   injectStyles();
 
   _sidebar = document.createElement("div");
-  _sidebar.className = "fb-sidebar";
+  _sidebar.className = "fb-sidebar fb-sidebar-collapsed";
   _sidebar.innerHTML = `
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
