@@ -1,12 +1,38 @@
 {
-  "name": "feedback-layer",
-  "version": "2.0.0",
-  "private": true,
-  "description": "Lightweight annotation layer for document feedback",
+  "name": "glossator",
+  "version": "1.0.0",
+  "description": "Lightweight annotation and feedback layer for HTML documents. Add collaborative commenting, highlighting, and threaded discussions to any webpage.",
+  "main": "dist/feedback-layer.js",
+  "files": [
+    "dist/feedback-layer.js",
+    "dist/feedback-layer.js.map",
+    "README.md"
+  ],
   "scripts": {
     "build": "node build.js",
-    "watch": "node build.js --watch"
+    "watch": "node build.js --watch",
+    "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "annotations",
+    "feedback",
+    "comments",
+    "highlighting",
+    "collaborative",
+    "document",
+    "text-anchoring",
+    "web-annotations"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/glossator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/glossator/issues"
+  },
+  "homepage": "https://github.com/yourusername/glossator#readme",
   "dependencies": {
     "@apache-annotator/dom": "^0.2.0",
     "@apache-annotator/selector": "^0.2.0"

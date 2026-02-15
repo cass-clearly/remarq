@@ -18,8 +18,10 @@ let _onSubmit = null;
 let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
+let _onEdit = null;
 let _showResolved = false;
 let _lastAnnotations = [];
+let _lastAnchoredIds = new Set();
 
 export function getCommenter() {
   return localStorage.getItem(COMMENTER_KEY) || "";
@@ -33,12 +35,14 @@ export function getCommenter() {
  * @param {Function} opts.onDelete - Called with annotationId when delete clicked
  * @param {Function} opts.onResolve - Called with (annotationId, resolved) when resolve toggled
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
+ * @param {Function} opts.onEdit - Called with (annotationId, comment) when edit saved
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
+  _onEdit = onEdit;
 
   injectStyles();
 
@@ -92,11 +96,11 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply }) {
   const resolvedCb = _sidebar.querySelector(".fb-show-resolved-cb");
   resolvedCb.addEventListener("change", () => {
     _showResolved = resolvedCb.checked;
-    renderAnnotations(_lastAnnotations);
+    renderAnnotations(_lastAnnotations, _lastAnchoredIds);  // Use stored anchoredIds
   });
 }
 
-function openSidebar() {
+export function openSidebar() {
   _sidebar.classList.remove("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.add("fb-sidebar-tab-hidden");
 }
@@ -187,24 +191,65 @@ function threadAnnotations(annotations) {
 
 /**
  * Render the full annotation list with threaded replies.
+ * Only shows annotations whose text was successfully found in the document.
+ *
+ * @param {Array} annotations - All annotations
+ * @param {Set} anchoredIds - Set of annotation IDs that successfully anchored to text
+ * @param {Map} annotationRanges - Map of annotation ID to Range for position sorting
  */
-export function renderAnnotations(annotations) {
+export function renderAnnotations(annotations, anchoredIds = new Set(), annotationRanges = new Map()) {
   _lastAnnotations = annotations;
+  _lastAnchoredIds = anchoredIds;  // Store for later use
   _listEl.innerHTML = "";
 
   const { topLevel, repliesByParent } = threadAnnotations(annotations);
 
-  const visibleTopLevel = _showResolved
-    ? topLevel
-    : topLevel.filter((a) => !a.resolved);
+  // Sort top-level annotations by document position
+  const sortedTopLevel = topLevel.slice().sort((a, b) => {
+    const rangeA = annotationRanges.get(a.id);
+    const rangeB = annotationRanges.get(b.id);
 
-  if (topLevel.length === 0) {
+    // If either doesn't have a range, keep original order
+    if (!rangeA || !rangeB) return 0;
+
+    // Compare positions using Range.compareBoundaryPoints
+    return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
+  });
+
+  // Filter to only show annotations that:
+  // 1. Successfully anchored (text found in document), OR
+  // 2. Are resolved and "show resolved" is enabled
+  const anchoredTopLevel = sortedTopLevel.filter((a) => {
+    const hasAnchor = anchoredIds.has(a.id);
+    const isResolved = !!a.resolved;
+
+    // Show if anchored, or if resolved and user wants to see resolved
+    return hasAnchor || (isResolved && _showResolved);
+  });
+
+  // Apply resolved filter on top of anchored filter
+  const visibleTopLevel = _showResolved
+    ? anchoredTopLevel
+    : anchoredTopLevel.filter((a) => !a.resolved);
+
+  if (sortedTopLevel.length === 0) {
     _listEl.innerHTML = `<div class="fb-empty">No annotations yet. Select text to add one.</div>`;
     return;
   }
 
+  // Calculate orphaned annotations (text no longer exists in document)
+  const orphanedCount = sortedTopLevel.filter((a) => !anchoredIds.has(a.id) && !a.resolved).length;
+
   if (visibleTopLevel.length === 0) {
-    _listEl.innerHTML = `<div class="fb-empty">All ${topLevel.length} annotation(s) resolved. Check "Show resolved" to see them.</div>`;
+    if (orphanedCount > 0) {
+      _listEl.innerHTML = `<div class="fb-empty">
+        ${anchoredTopLevel.length} annotation(s) resolved.
+        ${orphanedCount > 0 ? `<br>${orphanedCount} annotation(s) not shown because their quoted text no longer exists in the document.` : ''}
+        <br>Check "Show resolved" to see resolved annotations.
+      </div>`;
+    } else {
+      _listEl.innerHTML = `<div class="fb-empty">All ${sortedTopLevel.length} annotation(s) resolved. Check "Show resolved" to see them.</div>`;
+    }
     return;
   }
 
@@ -242,16 +287,12 @@ function buildCard(ann, isReply) {
     + (isReply ? " fb-ann-reply" : "");
   card.dataset.id = ann.id;
 
-  const quoteHtml = ann.quote && !isReply
-    ? `<div class="fb-ann-quote">"${escapeHtml(truncate(ann.quote, 100))}"</div>`
-    : "";
-
   card.innerHTML = `
-    ${quoteHtml}
     <div class="fb-ann-comment">${escapeHtml(ann.comment)}</div>
     <div class="fb-ann-meta">
       <span class="fb-ann-commenter">${escapeHtml(ann.commenter)}</span>
       <span class="fb-ann-time">${timeAgo(ann.created_at)}</span>
+      <button class="fb-ann-edit" title="Edit">&#x270E;</button>
       ${!isReply ? `<button class="fb-ann-resolve" title="${isResolved ? "Unresolve" : "Resolve"}">${isResolved ? "&#x21a9;" : "&#x2713;"}</button>` : ""}
       <button class="fb-ann-delete" title="Delete">&times;</button>
     </div>
@@ -259,7 +300,7 @@ function buildCard(ann, isReply) {
 
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-ann-delete") || e.target.closest(".fb-ann-resolve")) return;
+      if (e.target.closest(".fb-ann-delete") || e.target.closest(".fb-ann-resolve") || e.target.closest(".fb-ann-edit")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -273,6 +314,11 @@ function buildCard(ann, isReply) {
       if (_onResolve) _onResolve(ann.id, !isResolved);
     });
   }
+
+  card.querySelector(".fb-ann-edit").addEventListener("click", (e) => {
+    e.stopPropagation();
+    showEditForm(ann, card);
+  });
 
   card.querySelector(".fb-ann-delete").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -333,6 +379,42 @@ function showReplyForm(parentId, threadEl, replyBtn) {
 
   threadEl.insertBefore(form, replyBtn);
   replyTextarea.focus();
+}
+
+function showEditForm(ann, card) {
+  const commentEl = card.querySelector(".fb-ann-comment");
+  const originalText = ann.comment;
+
+  // Replace comment with edit form
+  commentEl.innerHTML = `
+    <textarea class="fb-form-textarea" rows="3">${escapeHtml(originalText)}</textarea>
+    <div class="fb-form-actions" style="margin-top: 6px;">
+      <button class="fb-btn fb-btn-primary fb-edit-save">Save</button>
+      <button class="fb-btn fb-btn-cancel fb-edit-cancel">Cancel</button>
+    </div>
+  `;
+
+  const textarea = commentEl.querySelector("textarea");
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+  const saveEdit = () => {
+    const newComment = textarea.value.trim();
+    if (!newComment) return;
+    if (_onEdit) _onEdit(ann.id, newComment);
+  };
+
+  commentEl.querySelector(".fb-edit-save").addEventListener("click", saveEdit);
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      saveEdit();
+    }
+  });
+
+  commentEl.querySelector(".fb-edit-cancel").addEventListener("click", () => {
+    commentEl.textContent = originalText;
+  });
 }
 
 /**
@@ -531,6 +613,18 @@ function injectStyles() {
     .fb-ann-resolve:hover {
       color: #16a34a;
     }
+    .fb-ann-edit {
+      background: none;
+      border: none;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .fb-ann-edit:hover {
+      color: #7c3aed;
+    }
     .fb-ann-delete {
       background: none;
       border: none;
@@ -670,17 +764,47 @@ function injectStyles() {
       background: #7c3aed;
       color: white;
       border: none;
-      border-radius: 6px;
-      padding: 6px 14px;
+      border-radius: 18px;
+      padding: 8px 16px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4), 0 2px 4px rgba(0,0,0,0.1);
       white-space: nowrap;
+      transition: all 0.2s ease;
+      animation: fb-tooltip-appear 0.2s ease;
+    }
+    .fb-annotate-tooltip::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid #7c3aed;
+      filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1));
     }
     .fb-annotate-tooltip:hover {
       background: #6d28d9;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(124, 58, 237, 0.5), 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .fb-annotate-tooltip:hover::after {
+      border-top-color: #6d28d9;
+    }
+    @keyframes fb-tooltip-appear {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
   `;
   document.head.appendChild(style);

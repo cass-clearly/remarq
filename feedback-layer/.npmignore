@@ -1,0 +1,10 @@
+# Source files (only publish built dist/)
+src/
+build.js
+node_modules/
+package-lock.json
+
+# Development files
+.gitignore
+*.log
+.DS_Store

@@ -10,11 +10,12 @@
  *   ></script>
  */
 
-import { setBaseUrl, fetchAnnotations, createAnnotation, deleteAnnotation, resolveAnnotation } from "./api.js";
+import { setBaseUrl, fetchAnnotations, createAnnotation, updateAnnotation, deleteAnnotation, resolveAnnotation } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
   removeHighlights,
+  removeAllHighlights,
   setHighlightClickHandler,
   setActiveHighlight,
 } from "./highlights.js";
@@ -23,6 +24,7 @@ import {
   showCommentForm,
   renderAnnotations,
   focusAnnotationCard,
+  openSidebar,
   getCommenter,
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
@@ -32,6 +34,8 @@ let _docUri = null;     // canonical URI for this document
 let _annotations = [];  // current annotation list
 let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
+let _anchoredIds = new Set();  // Track successfully anchored annotations
+let _annotationRanges = new Map();  // Map annotation ID to its range for position sorting
 
 function init() {
   const scriptTag =
@@ -58,10 +62,12 @@ function init() {
       onDelete: handleDelete,
       onResolve: handleResolve,
       onReply: handleReply,
+      onEdit: handleEdit,
     });
 
     // Highlight click → scroll sidebar to card
     setHighlightClickHandler((id) => {
+      openSidebar();
       focusAnnotationCard(id);
       setActiveHighlight(id);
     });
@@ -86,27 +92,46 @@ function init() {
 async function loadAnnotations() {
   try {
     _annotations = await fetchAnnotations(_docUri);
-    renderAnnotations(_annotations);
-    await anchorAll(_annotations);
+    const anchored = await anchorAll(_annotations);
+    _anchoredIds = anchored;
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to load annotations:", err);
   }
 }
 
 async function anchorAll(annotations) {
+  // Clean slate: remove all existing highlights before re-anchoring
+  removeAllHighlights();
+
+  const anchored = new Set();
+  _annotationRanges.clear();
+
   for (const ann of annotations) {
+    // Skip replies - they don't have text anchors
+    if (ann.parent_id) continue;
+
     try {
       const range = await rangeFromSelector(
         { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
         _root
       );
+
       if (range && !ann.resolved) {
         highlightRange(range, ann.id);
+        anchored.add(ann.id);
+        _annotationRanges.set(ann.id, range);
+      } else if (range && ann.resolved) {
+        // Track as anchored even if resolved (for unresolve functionality)
+        anchored.add(ann.id);
+        _annotationRanges.set(ann.id, range);
       }
     } catch (e) {
       console.warn(`[feedback-layer] Could not anchor annotation ${ann.id}:`, e);
     }
   }
+
+  return anchored;
 }
 
 function setupSelectionListener() {
@@ -146,7 +171,7 @@ function showTooltip(range) {
   const rect = range.getBoundingClientRect();
   _tooltip = document.createElement("button");
   _tooltip.className = "fb-annotate-tooltip";
-  _tooltip.textContent = "Annotate";
+  _tooltip.textContent = "✎ Annotate";
   _tooltip.style.top = window.scrollY + rect.top - 36 + "px";
   _tooltip.style.left =
     window.scrollX + rect.left + rect.width / 2 - 40 + "px";
@@ -193,14 +218,18 @@ async function handleCommentSubmit({ comment, commenter }) {
     });
 
     _annotations.push(ann);
-    renderAnnotations(_annotations);
 
     // Anchor and highlight the new annotation
     const range = await rangeFromSelector(
       { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
       _root
     );
-    if (range) highlightRange(range, ann.id);
+    if (range) {
+      highlightRange(range, ann.id);
+      _anchoredIds.add(ann.id);
+    }
+
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
 
     // Clear selection
     window.getSelection().removeAllRanges();
@@ -217,7 +246,6 @@ async function handleResolve(annotationId, resolved) {
     const updated = await resolveAnnotation(annotationId, resolved);
     const idx = _annotations.findIndex((a) => a.id === annotationId);
     if (idx !== -1) _annotations[idx] = updated;
-    renderAnnotations(_annotations);
 
     if (resolved) {
       removeHighlights(annotationId);
@@ -228,8 +256,16 @@ async function handleResolve(annotationId, resolved) {
         { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
         _root
       );
-      if (range) highlightRange(range, ann.id);
+      if (range) {
+        highlightRange(range, ann.id);
+        _anchoredIds.add(ann.id);
+      } else {
+        // Text no longer exists, remove from anchored set
+        _anchoredIds.delete(ann.id);
+      }
     }
+
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to resolve annotation:", err);
   }
@@ -244,10 +280,22 @@ async function handleReply({ parent_id, comment, commenter }) {
       parent_id,
     });
     _annotations.push(reply);
-    renderAnnotations(_annotations);
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to create reply:", err);
     alert("Failed to save reply: " + err.message);
+  }
+}
+
+async function handleEdit(annotationId, comment) {
+  try {
+    const updated = await updateAnnotation(annotationId, { comment });
+    const idx = _annotations.findIndex((a) => a.id === annotationId);
+    if (idx !== -1) _annotations[idx] = updated;
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
+  } catch (err) {
+    console.error("[feedback-layer] Failed to edit annotation:", err);
+    alert("Failed to update comment: " + err.message);
   }
 }
 
@@ -255,10 +303,11 @@ async function handleDelete(annotationId) {
   try {
     await deleteAnnotation(annotationId);
     removeHighlights(annotationId);
+    _anchoredIds.delete(annotationId);
     _annotations = _annotations.filter(
       (a) => a.id !== annotationId && a.parent_id !== annotationId
     );
-    renderAnnotations(_annotations);
+    renderAnnotations(_annotations, _anchoredIds, _annotationRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to delete annotation:", err);
   }

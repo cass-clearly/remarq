@@ -85,6 +85,20 @@ export function removeHighlights(annotationId) {
 }
 
 /**
+ * Remove ALL highlights from the document (for all annotations).
+ * Use this before re-anchoring to ensure a clean slate.
+ */
+export function removeAllHighlights() {
+  const marks = document.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
+  marks.forEach((mark) => {
+    const parent = mark.parentNode;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  });
+}
+
+/**
  * Set the active (focused) highlight, removing active state from others.
  */
 export function setActiveHighlight(annotationId) {

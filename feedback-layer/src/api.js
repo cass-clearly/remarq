@@ -37,6 +37,16 @@ export async function createAnnotation({
   return res.json();
 }
 
+export async function updateAnnotation(id, { comment }) {
+  const res = await fetch(`${_baseUrl}/api/annotations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ comment }),
+  });
+  if (!res.ok) throw new Error(`Failed to update annotation: ${res.status}`);
+  return res.json();
+}
+
 export async function resolveAnnotation(id, resolved) {
   const res = await fetch(`${_baseUrl}/api/annotations/${id}`, {
     method: "PATCH",
