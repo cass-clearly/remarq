@@ -52,7 +52,35 @@ function init() {
 
   setBaseUrl(config.apiUrl);
 
-  const boot = () => {
+  /**
+   * Wait for Mermaid diagrams to finish rendering.
+   * Mermaid renders asynchronously, so we need to wait before anchoring annotations.
+   */
+  async function waitForMermaid() {
+    // Check if Mermaid is present on the page
+    if (typeof window.mermaid === 'undefined') {
+      return; // No Mermaid, continue immediately
+    }
+
+    // Check if there are any Mermaid diagrams to render
+    const mermaidElements = document.querySelectorAll('.mermaid');
+    if (mermaidElements.length === 0) {
+      return; // No diagrams, continue immediately
+    }
+
+    console.log('[feedback-layer] Waiting for Mermaid to finish rendering...');
+
+    // Wait for Mermaid to render all diagrams
+    try {
+      await window.mermaid.run();
+      console.log('[feedback-layer] Mermaid rendering complete');
+    } catch (err) {
+      console.warn('[feedback-layer] Error waiting for Mermaid:', err);
+      // Continue anyway - don't block the feedback layer
+    }
+  }
+
+  const boot = async () => {
     _root = document.querySelector(config.contentSelector) || document.body;
     _docUri = config.documentUri || window.location.origin + window.location.pathname;
 
@@ -74,6 +102,9 @@ function init() {
 
     // Text selection → "Annotate" tooltip
     setupSelectionListener();
+
+    // Wait for Mermaid to finish rendering before anchoring annotations
+    await waitForMermaid();
 
     // Load existing annotations
     loadAnnotations();

@@ -56,6 +56,40 @@ export function highlightRange(range, annotationId) {
 }
 
 function wrapTextRange(range, annotationId) {
+  // Check if we're inside an SVG <text> element (not foreignObject HTML)
+  let node = range.commonAncestorContainer;
+  while (node && node.nodeType !== Node.ELEMENT_NODE) {
+    node = node.parentNode;
+  }
+
+  // Walk up to check if we're in SVG <text> vs foreignObject HTML
+  let current = node;
+  let inSVGText = false;
+  let svgRoot = null;
+
+  while (current) {
+    // If we hit a foreignObject, we're in HTML context - use regular marks
+    if (current.tagName === 'foreignObject') {
+      inSVGText = false;
+      break;
+    }
+    // If we hit an SVG text element, we need SVG highlighting
+    if (current.tagName === 'text' && current instanceof SVGElement) {
+      inSVGText = true;
+    }
+    // Track the SVG root for later
+    if (current.tagName === 'svg') {
+      svgRoot = current;
+    }
+    current = current.parentElement;
+  }
+
+  // If inside SVG <text> element, use SVG-compatible highlighting
+  if (inSVGText && svgRoot) {
+    return createSVGHighlight(range, annotationId, svgRoot);
+  }
+
+  // Regular HTML highlighting
   const mark = document.createElement("mark");
   mark.className = HIGHLIGHT_CLASS;
   mark.dataset.annotationId = annotationId;
@@ -65,8 +99,90 @@ function wrapTextRange(range, annotationId) {
   mark.addEventListener("click", () => {
     if (_onHighlightClick) _onHighlightClick(annotationId);
   });
-  range.surroundContents(mark);
+
+  try {
+    range.surroundContents(mark);
+  } catch (e) {
+    console.warn('[feedback-layer] Failed to create highlight:', e);
+    return null;
+  }
+
   return mark;
+}
+
+/**
+ * Create an SVG-compatible highlight using a <rect> element.
+ */
+function createSVGHighlight(range, annotationId, svgRoot) {
+  try {
+    // Get the bounding box of the selected text
+    const rects = range.getClientRects();
+    if (rects.length === 0) return null;
+
+    const svgNS = "http://www.w3.org/2000/svg";
+
+    // Get the SVG's CTM (Current Transformation Matrix) to convert screen to SVG coords
+    const ctm = svgRoot.getScreenCTM();
+    if (!ctm) {
+      console.warn('[feedback-layer] Could not get SVG transformation matrix');
+      return null;
+    }
+
+    // Create a group to hold all highlight rectangles for this annotation
+    const group = document.createElementNS(svgNS, "g");
+    group.setAttribute("class", HIGHLIGHT_CLASS);
+    group.setAttribute("data-annotation-id", annotationId);
+    group.style.cursor = "pointer";
+
+    // Create a rect for each line of text
+    for (let i = 0; i < rects.length; i++) {
+      const clientRect = rects[i];
+      const highlightRect = document.createElementNS(svgNS, "rect");
+
+      // Convert client coordinates to SVG coordinates
+      const topLeft = svgRoot.createSVGPoint();
+      topLeft.x = clientRect.left;
+      topLeft.y = clientRect.top;
+      const svgTopLeft = topLeft.matrixTransform(ctm.inverse());
+
+      const width = clientRect.width / ctm.a;
+      const height = clientRect.height / ctm.d;
+
+      highlightRect.setAttribute("x", svgTopLeft.x);
+      highlightRect.setAttribute("y", svgTopLeft.y);
+      highlightRect.setAttribute("width", width);
+      highlightRect.setAttribute("height", height);
+      highlightRect.setAttribute("fill", "yellow");
+      highlightRect.setAttribute("fill-opacity", "0.5");
+      highlightRect.setAttribute("stroke", "orange");
+      highlightRect.setAttribute("stroke-width", "2");
+
+      console.log('[feedback-layer] SVG highlight rect:', {
+        clientRect: { x: clientRect.left, y: clientRect.top, width: clientRect.width, height: clientRect.height },
+        svgCoords: { x: svgTopLeft.x, y: svgTopLeft.y, width, height },
+        ctm: { a: ctm.a, d: ctm.d }
+      });
+
+      group.appendChild(highlightRect);
+    }
+
+    group.addEventListener("click", () => {
+      if (_onHighlightClick) _onHighlightClick(annotationId);
+    });
+
+    // Find Mermaid's root group (or use svgRoot if not found)
+    const mermaidRoot = svgRoot.querySelector('g.root');
+    const insertTarget = mermaidRoot || svgRoot;
+
+    // Insert at the beginning of the target so highlights appear behind text
+    insertTarget.insertBefore(group, insertTarget.firstChild);
+
+    console.log('[feedback-layer] Created SVG highlight with', rects.length, 'rectangles, inserted into', insertTarget.className || 'svg root');
+    return group;
+  } catch (e) {
+    console.warn('[feedback-layer] Failed to create SVG highlight:', e);
+    return null;
+  }
 }
 
 /**
@@ -78,9 +194,16 @@ export function removeHighlights(annotationId) {
   );
   marks.forEach((mark) => {
     const parent = mark.parentNode;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-    parent.normalize();
+
+    // SVG highlights (g elements) don't need unwrapping, just remove them
+    if (mark.tagName === 'g' || mark instanceof SVGElement) {
+      parent.removeChild(mark);
+    } else {
+      // HTML marks need unwrapping
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    }
   });
 }
 
@@ -90,11 +213,20 @@ export function removeHighlights(annotationId) {
  */
 export function removeAllHighlights() {
   const marks = document.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
+  console.log('[feedback-layer] removeAllHighlights() called, removing', marks.length, 'highlights');
   marks.forEach((mark) => {
     const parent = mark.parentNode;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-    parent.normalize();
+
+    // SVG highlights (g elements) don't need unwrapping, just remove them
+    if (mark.tagName === 'g' || mark instanceof SVGElement) {
+      console.log('[feedback-layer] Removing SVG highlight:', mark);
+      parent.removeChild(mark);
+    } else {
+      // HTML marks need unwrapping
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    }
   });
 }
 
@@ -103,12 +235,25 @@ export function removeAllHighlights() {
  */
 export function setActiveHighlight(annotationId) {
   document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
-    if (el.dataset.annotationId === annotationId) {
-      el.style.backgroundColor = "rgba(255, 180, 0, 0.55)";
+    const isActive = el.dataset.annotationId === annotationId;
+    const activeColor = "rgba(255, 180, 0, 0.55)";
+    const normalColor = "rgba(255, 212, 0, 0.35)";
+
+    if (isActive) {
       el.classList.add(ACTIVE_CLASS);
     } else {
-      el.style.backgroundColor = "rgba(255, 212, 0, 0.35)";
       el.classList.remove(ACTIVE_CLASS);
+    }
+
+    // Handle SVG highlights
+    if (el.tagName === 'g' || el instanceof SVGElement) {
+      const rects = el.querySelectorAll('rect');
+      rects.forEach(rect => {
+        rect.setAttribute('fill', isActive ? activeColor : normalColor);
+      });
+    } else {
+      // Handle HTML highlights
+      el.style.backgroundColor = isActive ? activeColor : normalColor;
     }
   });
 }
