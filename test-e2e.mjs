@@ -176,8 +176,14 @@ async function testDeleteAnnotation() {
   collectErrors(page);
   await page.goto(BASE + "/index.html", { waitUntil: "networkidle0" });
 
-  await page.waitForSelector(".fb-ann-card", { timeout: 3000 });
-  await page.click(".fb-ann-delete");
+  // Open sidebar first (starts collapsed), then delete
+  await page.evaluate(() => {
+    document.querySelector(".fb-sidebar-tab").click();
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  await page.evaluate(() => {
+    document.querySelector(".fb-ann-delete").click();
+  });
 
   // Wait for deletion
   await new Promise((r) => setTimeout(r, 500));
