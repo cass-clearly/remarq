@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample Document - Feedback Demo</title>
+  <style>
+    body {
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 20px;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.7;
+      color: #333;
+    }
+    h1 { font-size: 2em; margin-bottom: 0.3em; }
+    h2 { font-size: 1.4em; margin-top: 1.8em; }
+    p { margin: 1em 0; }
+    .meta { color: #666; font-size: 0.9em; font-style: italic; }
+    blockquote {
+      border-left: 3px solid #7c3aed;
+      margin: 1.5em 0;
+      padding: 0.5em 1em;
+      color: #555;
+      background: #f9f5ff;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+
+<article>
+  <h1>The Future of Collaborative Document Editing</h1>
+  <p class="meta">Draft v0.1 — Open for review</p>
+
+  <h2>Introduction</h2>
+  <p>
+    Collaborative document editing has evolved significantly over the past decade.
+    From simple track changes in desktop word processors to real-time co-editing in
+    cloud-based tools, the way teams create and refine documents continues to change.
+  </p>
+  <p>
+    However, a gap remains between <em>collecting feedback</em> and <em>acting on it</em>.
+    Reviewers leave comments, but authors must manually synthesize dozens of suggestions
+    into a coherent revision. This process is time-consuming and error-prone.
+  </p>
+
+  <h2>The Annotation Layer</h2>
+  <p>
+    Web annotations, standardized by the W3C Web Annotation Data Model, provide a
+    powerful mechanism for attaching feedback directly to specific passages of text.
+    Unlike document comments that exist in a sidebar, annotations are anchored to
+    the content they reference using text selectors.
+  </p>
+  <p>
+    The Hypothesis project implements this standard as an open-source annotation
+    layer that can be embedded in any web page. Reviewers highlight text, leave
+    comments, and these annotations are stored via a REST API.
+  </p>
+
+  <blockquote>
+    "The web is a conversation. Annotations make that conversation visible."
+  </blockquote>
+
+  <h2>AI-Assisted Revision</h2>
+  <p>
+    Large language models can bridge the gap between feedback collection and revision.
+    By formatting reviewer annotations as structured input to an LLM, we can generate
+    a first-pass revision that addresses each piece of feedback. The author then reviews
+    the AI's suggestions rather than starting from scratch.
+  </p>
+  <p>
+    This approach preserves human judgment at every step: reviewers provide the feedback,
+    the AI proposes changes, and the author makes the final decision. The AI serves as
+    a capable assistant that accelerates the revision cycle without replacing human
+    creativity or editorial control.
+  </p>
+
+  <h2>Workflow</h2>
+  <p>The proposed workflow has four steps:</p>
+  <ol>
+    <li>Author publishes an HTML document with the annotation layer embedded</li>
+    <li>Reviewers highlight text and leave comments using the Hypothesis sidebar</li>
+    <li>Author clicks "Send Feedback to Claude" to collect all annotations</li>
+    <li>The system formats annotations into a prompt and sends them to Claude for revision</li>
+  </ol>
+
+  <h2>Conclusion</h2>
+  <p>
+    By combining open web annotation standards with modern AI, we can create a
+    document revision workflow that is both more efficient and more inclusive. Every
+    reviewer's voice is heard, and the revision process is transparent and traceable.
+  </p>
+</article>
+
+<!--
+  Feedback Layer Configuration
+  ============================
+  - data-api-url: Points to the annotation backend server
+  - data-content-selector: CSS selector for the annotatable content
+
+  Add ?author=true to the URL to show the "Send Feedback to Claude" button.
+-->
+<script
+  src="/feedback-layer.js"
+  data-content-selector="article"
+></script>
+
+</body>
+</html>
