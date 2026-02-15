@@ -44,7 +44,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve }) {
   _sidebar.innerHTML = `
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
-      <button class="fb-sidebar-toggle" title="Toggle sidebar">&lsaquo;</button>
+      <button class="fb-sidebar-toggle" title="Close sidebar">&times;</button>
     </div>
     <div class="fb-sidebar-content">
       <div class="fb-name-section">
@@ -63,8 +63,14 @@ export function createSidebar({ onSubmit, onDelete, onResolve }) {
     </div>
   `;
 
+  // Floating tab to reopen sidebar when closed
+  const tab = document.createElement("button");
+  tab.className = "fb-sidebar-tab";
+  tab.textContent = "Feedback";
+  tab.addEventListener("click", () => openSidebar());
+  document.body.appendChild(tab);
+
   document.body.appendChild(_sidebar);
-  document.body.style.marginRight = SIDEBAR_WIDTH + "px";
 
   _listEl = _sidebar.querySelector(".fb-annotation-list");
   _formEl = _sidebar.querySelector(".fb-form-section");
@@ -75,13 +81,9 @@ export function createSidebar({ onSubmit, onDelete, onResolve }) {
     localStorage.setItem(COMMENTER_KEY, nameInput.value.trim());
   });
 
-  // Toggle sidebar collapse
+  // Close button in header
   const toggleBtn = _sidebar.querySelector(".fb-sidebar-toggle");
-  toggleBtn.addEventListener("click", () => {
-    const collapsed = _sidebar.classList.toggle("fb-sidebar-collapsed");
-    document.body.style.marginRight = collapsed ? "0" : SIDEBAR_WIDTH + "px";
-    toggleBtn.textContent = collapsed ? "\u203a" : "\u2039";
-  });
+  toggleBtn.addEventListener("click", () => closeSidebar());
 
   // Show/hide resolved filter
   const resolvedCb = _sidebar.querySelector(".fb-show-resolved-cb");
@@ -89,6 +91,16 @@ export function createSidebar({ onSubmit, onDelete, onResolve }) {
     _showResolved = resolvedCb.checked;
     renderAnnotations(_lastAnnotations);
   });
+}
+
+function openSidebar() {
+  _sidebar.classList.remove("fb-sidebar-collapsed");
+  document.querySelector(".fb-sidebar-tab").classList.add("fb-sidebar-tab-hidden");
+}
+
+function closeSidebar() {
+  _sidebar.classList.add("fb-sidebar-collapsed");
+  document.querySelector(".fb-sidebar-tab").classList.remove("fb-sidebar-tab-hidden");
 }
 
 /**
@@ -104,6 +116,7 @@ export function showCommentForm(quote) {
     return;
   }
 
+  openSidebar();
   _pendingQuote = quote;
   _formEl.style.display = "";
   _formEl.innerHTML = `
@@ -253,10 +266,37 @@ function injectStyles() {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
       color: #333;
-      transition: transform 0.2s ease;
+      transition: transform 0.25s ease;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.08);
     }
     .fb-sidebar-collapsed {
-      transform: translateX(${SIDEBAR_WIDTH - 28}px);
+      transform: translateX(100%);
+    }
+    .fb-sidebar-tab {
+      position: fixed;
+      top: 50%;
+      right: 0;
+      z-index: 9998;
+      transform: translateY(-50%) rotate(-90deg);
+      transform-origin: bottom right;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      border-radius: 6px 6px 0 0;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-shadow: -2px 0 6px rgba(0,0,0,0.15);
+      transition: opacity 0.2s;
+    }
+    .fb-sidebar-tab:hover {
+      background: #6d28d9;
+    }
+    .fb-sidebar-tab-hidden {
+      opacity: 0;
+      pointer-events: none;
     }
     .fb-sidebar-header {
       display: flex;
