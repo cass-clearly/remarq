@@ -1,4 +1,4 @@
-# Glossator
+# Remarq
 
 Lightweight document annotation tool. Reviewers highlight text and leave threaded comments — no accounts needed, just enter a name. Authors collect the feedback and send it to Claude for AI-assisted revision.
 
@@ -37,7 +37,7 @@ That's it. The sidebar, text selection, highlights, and annotation UI are all ha
 
 | Attribute | Default | Description |
 |-----------|---------|-------------|
-| `data-api-url` | `""` (same origin) | URL of the Glossator backend |
+| `data-api-url` | `""` (same origin) | URL of the Remarq backend |
 | `data-content-selector` | `body` | CSS selector for the annotatable content area |
 | `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
 
@@ -68,12 +68,12 @@ PORT=8080 npm start
 
 ```ini
 [Unit]
-Description=Glossator annotation server
+Description=Remarq annotation server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/path/to/glossator
+WorkingDirectory=/path/to/remarq
 ExecStart=/usr/bin/node server/index.js
 Environment=PORT=3333
 Restart=on-failure
@@ -87,7 +87,7 @@ WantedBy=multi-user.target
 ```nginx
 server {
     listen 443 ssl;
-    server_name glossator.example.com;
+    server_name remarq.example.com;
 
     location /api/ {
         proxy_pass http://127.0.0.1:3333;
@@ -103,8 +103,8 @@ Then on your pages:
 
 ```html
 <script
-  src="https://glossator.example.com/feedback-layer.js"
-  data-api-url="https://glossator.example.com"
+  src="https://remarq.example.com/feedback-layer.js"
+  data-api-url="https://remarq.example.com"
   data-content-selector="article"
 ></script>
 ```
@@ -171,7 +171,7 @@ For replies, set `parent_id` to the parent annotation's ID. Replies don't need `
 ## Project Structure
 
 ```
-glossator/
+remarq/
 ├── package.json              # Root: npm install + npm start
 ├── server/
 │   ├── package.json          # express, better-sqlite3, cors, uuid

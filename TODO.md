@@ -1,4 +1,4 @@
-# Glossator TODO
+# Remarq TODO
 
 ## 🐛 Bugs / Issues
 - [ ] Test with very long documents (performance)

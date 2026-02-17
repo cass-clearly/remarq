@@ -1,4 +1,4 @@
-# Glossator — Claude Code Instructions
+# Remarq — Claude Code Instructions
 
 ## Git Workflow (Required for All Meaningful Work)
 

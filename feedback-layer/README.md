@@ -1,8 +1,8 @@
-# Glossator
+# Remarq
 
 Lightweight annotation and feedback layer for HTML documents. Add collaborative commenting, highlighting, and threaded discussions to any webpage.
 
-![Glossator Demo](https://via.placeholder.com/800x400?text=Glossator+Demo)
+![Remarq Demo](https://via.placeholder.com/800x400?text=Remarq+Demo)
 
 ## Features
 
@@ -22,7 +22,7 @@ Just add one script tag to your HTML:
 
 ```html
 <script
-  src="https://unpkg.com/glossator@1/dist/feedback-layer.js"
+  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
 ></script>
@@ -31,13 +31,13 @@ Just add one script tag to your HTML:
 ### Option 2: NPM
 
 ```bash
-npm install glossator
+npm install remarq
 ```
 
 Copy the built file to your public directory:
 
 ```bash
-cp node_modules/glossator/dist/feedback-layer.js public/
+cp node_modules/remarq/dist/feedback-layer.js public/
 ```
 
 Then add to your HTML:
@@ -65,7 +65,7 @@ Configure via data attributes on the script tag:
 **Annotate just the main article:**
 ```html
 <script
-  src="https://unpkg.com/glossator@1/dist/feedback-layer.js"
+  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
 ></script>
@@ -74,7 +74,7 @@ Configure via data attributes on the script tag:
 **Annotate a specific div:**
 ```html
 <script
-  src="https://unpkg.com/glossator@1/dist/feedback-layer.js"
+  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector=".content"
 ></script>
@@ -83,7 +83,7 @@ Configure via data attributes on the script tag:
 **Multiple documents on same domain:**
 ```html
 <script
-  src="https://unpkg.com/glossator@1/dist/feedback-layer.js"
+  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
   data-document-uri="/docs/getting-started"
@@ -92,7 +92,7 @@ Configure via data attributes on the script tag:
 
 ## Annotation Server
 
-Glossator requires a backend server to store annotations.
+Remarq requires a backend server to store annotations.
 
 ### Quick Start with the Example Server
 
@@ -100,8 +100,8 @@ Clone the repository and run the included server:
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/glossator.git
-cd glossator/server
+git clone https://github.com/cass-clearly/remarq.git
+cd remarq/server
 
 # Start the server
 npm install
@@ -144,8 +144,8 @@ See the [API specification](./server/README.md) for details.
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/glossator.git
-cd glossator/feedback-layer
+git clone https://github.com/cass-clearly/remarq.git
+cd remarq/feedback-layer
 
 # Install dependencies
 npm install

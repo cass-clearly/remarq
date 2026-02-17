@@ -1,5 +1,5 @@
 {
-  "name": "glossator",
+  "name": "remarq",
   "version": "1.1.0",
   "description": "Lightweight annotation and feedback layer for HTML documents. Add collaborative commenting, highlighting, and threaded discussions to any webpage.",
   "main": "dist/feedback-layer.js",
@@ -27,12 +27,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/glossator.git"
+    "url": "https://github.com/cass-clearly/remarq.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/glossator/issues"
+    "url": "https://github.com/cass-clearly/remarq/issues"
   },
-  "homepage": "https://github.com/yourusername/glossator#readme",
+  "homepage": "https://github.com/cass-clearly/remarq#readme",
   "dependencies": {
     "@apache-annotator/dom": "^0.2.0",
     "@apache-annotator/selector": "^0.2.0"

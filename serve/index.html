@@ -72,7 +72,7 @@
 
   <h2>System Architecture</h2>
   <p>
-    Glossator implements a client-server architecture where annotations are anchored to
+    Remarq implements a client-server architecture where annotations are anchored to
     text using TextQuoteSelector and stored in a backend database. Try selecting and annotating
     text in the diagram below to test annotation support for dynamically-rendered content.
   </p>
@@ -135,23 +135,23 @@ graph TB
 sequenceDiagram
     participant Author
     participant Reviewer
-    participant Glossator
+    participant Remarq
     participant Server
 
-    Author->>Glossator: Publish document
-    Reviewer->>Glossator: Select text
-    Glossator->>Reviewer: Show ✎ Annotate
-    Reviewer->>Glossator: Add comment
-    Glossator->>Server: POST /api/annotations
-    Server-->>Glossator: Save annotation
-    Glossator->>Glossator: Highlight text
+    Author->>Remarq: Publish document
+    Reviewer->>Remarq: Select text
+    Remarq->>Reviewer: Show ✎ Annotate
+    Reviewer->>Remarq: Add comment
+    Remarq->>Server: POST /api/annotations
+    Server-->>Remarq: Save annotation
+    Remarq->>Remarq: Highlight text
 
-    Reviewer->>Glossator: Click highlight
-    Glossator->>Glossator: Open sidebar
+    Reviewer->>Remarq: Click highlight
+    Remarq->>Remarq: Open sidebar
 
-    Author->>Glossator: Resolve ✓
-    Glossator->>Server: PATCH (resolved)
-    Glossator->>Glossator: Remove highlight
+    Author->>Remarq: Resolve ✓
+    Remarq->>Server: PATCH (resolved)
+    Remarq->>Remarq: Remove highlight
   </pre>
 
   <p>
@@ -263,7 +263,7 @@ erDiagram
 
   <pre class="mermaid">
 gantt
-    title Glossator Development Timeline
+    title Remarq Development Timeline
     dateFormat YYYY-MM-DD
     section Planning
     Requirements gathering       :done, req, 2024-01-01, 7d
