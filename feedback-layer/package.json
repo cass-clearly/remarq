@@ -1,5 +1,5 @@
 {
-  "name": "remarq",
+  "name": "@csalvato/remarq",
   "version": "1.1.0",
   "description": "Lightweight annotation and feedback layer for HTML documents. Add collaborative commenting, highlighting, and threaded discussions to any webpage.",
   "main": "dist/feedback-layer.js",

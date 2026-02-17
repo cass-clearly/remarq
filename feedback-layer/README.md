@@ -22,7 +22,7 @@ Just add one script tag to your HTML:
 
 ```html
 <script
-  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
+  src="https://unpkg.com/@csalvato/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
 ></script>
@@ -31,13 +31,13 @@ Just add one script tag to your HTML:
 ### Option 2: NPM
 
 ```bash
-npm install remarq
+npm install @csalvato/remarq
 ```
 
 Copy the built file to your public directory:
 
 ```bash
-cp node_modules/remarq/dist/feedback-layer.js public/
+cp node_modules/@csalvato/remarq/dist/feedback-layer.js public/
 ```
 
 Then add to your HTML:
@@ -65,7 +65,7 @@ Configure via data attributes on the script tag:
 **Annotate just the main article:**
 ```html
 <script
-  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
+  src="https://unpkg.com/@csalvato/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
 ></script>
@@ -74,7 +74,7 @@ Configure via data attributes on the script tag:
 **Annotate a specific div:**
 ```html
 <script
-  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
+  src="https://unpkg.com/@csalvato/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector=".content"
 ></script>
@@ -83,7 +83,7 @@ Configure via data attributes on the script tag:
 **Multiple documents on same domain:**
 ```html
 <script
-  src="https://unpkg.com/remarq@1/dist/feedback-layer.js"
+  src="https://unpkg.com/@csalvato/remarq@1/dist/feedback-layer.js"
   data-api-url="http://localhost:3333"
   data-content-selector="article"
   data-document-uri="/docs/getting-started"
