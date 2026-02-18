@@ -10,11 +10,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is required");
-}
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres@localhost/postgres";
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 // Express 4 does not catch rejected promises from async handlers.
 // Wrap them so unhandled rejections become proper error responses.
