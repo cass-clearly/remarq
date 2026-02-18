@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remarq — Drop-in annotations for any HTML page</title>
+  <meta name="description" content="Lightweight document annotation tool. Reviewers highlight text and leave threaded comments — no accounts needed. Authors send feedback to Claude for AI-assisted revision.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Prevent FOUC */
+    html { font-family: 'Inter', system-ui, sans-serif; }
+    /* Highlight accent matching the annotation experience */
+    .highlight-accent { background: rgba(255, 212, 0, 0.35); padding: 0.05em 0.15em; border-radius: 2px; }
+    /* Fade-in animation */
+    .fade-in { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+    @media (prefers-reduced-motion: reduce) {
+      .fade-in { opacity: 1; transform: none; transition: none; }
+    }
+    /* Code block styling */
+    .code-block { position: relative; }
+    .copy-btn { position: absolute; top: 0.5rem; right: 0.5rem; opacity: 0; transition: opacity 0.2s; }
+    .code-block:hover .copy-btn { opacity: 1; }
+    .copy-btn.copied { opacity: 1; }
+  </style>
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+  <!-- Sticky Nav -->
+  <nav id="navbar" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300 -translate-y-full">
+    <div class="backdrop-blur-md bg-white/80 border-b border-gray-200/60">
+      <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <a href="#" class="text-xl font-bold text-violet-600">Remarq</a>
+        <div class="flex items-center gap-4">
+          <a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            GitHub
+          </a>
+          <a href="#setup" class="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors">Get Started</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="relative min-h-[90vh] flex items-center bg-gradient-to-br from-gray-950 via-violet-950 to-gray-950 overflow-hidden">
+    <!-- Subtle grid overlay -->
+    <div class="absolute inset-0 opacity-[0.04]" style="background-image: url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22><rect fill=%22none%22 width=%2260%22 height=%2260%22/><path d=%22M0 60L60 0%22 stroke=%22white%22 stroke-width=%220.5%22/></svg>');"></div>
+    <div class="relative max-w-6xl mx-auto px-6 py-24 w-full">
+      <div class="max-w-3xl">
+        <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.1] mb-6">
+          Drop-in <span class="highlight-accent text-white">annotations</span> for any HTML page
+        </h1>
+        <p class="text-lg sm:text-xl text-violet-200 mb-10 max-w-2xl leading-relaxed">
+          Reviewers highlight text and leave threaded comments — no accounts needed. Authors send all feedback to Claude for AI-assisted revision. One script tag. Self-hosted.
+        </p>
+        <div class="flex flex-wrap gap-4 mb-14">
+          <a href="#setup" class="bg-violet-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-violet-500 transition-colors">Get Started</a>
+          <a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="border border-violet-400/30 text-violet-200 px-6 py-3 rounded-lg font-semibold hover:bg-violet-900/40 transition-colors flex items-center gap-2">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+
+        <!-- Quick-start terminal -->
+        <div class="bg-gray-900/80 border border-violet-500/20 rounded-xl overflow-hidden max-w-xl">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
+            <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+            <span class="ml-2 text-xs text-gray-500 font-mono">Quick Start</span>
+          </div>
+          <div class="code-block p-5 font-mono text-sm leading-relaxed">
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">git clone</span> <span class="text-white">https://github.com/cass-clearly/remarq.git</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">npm install</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">npm start</span></div>
+            <div class="mt-2 text-gray-500"># Visit http://localhost:3333</div>
+            <button class="copy-btn bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2.5 py-1.5 rounded-md text-xs transition-all" data-copy="git clone https://github.com/cass-clearly/remarq.git
+npm install
+npm start">Copy</button>
+          </div>
+        </div>
+
+        <!-- Embed snippet -->
+        <div class="mt-6 bg-gray-900/80 border border-violet-500/20 rounded-xl overflow-hidden max-w-xl">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+            <span class="text-xs text-gray-500 font-mono">Embed in any page</span>
+          </div>
+          <div class="code-block p-5 font-mono text-sm leading-relaxed">
+            <div class="text-gray-400">&lt;<span class="text-violet-400">script</span></div>
+            <div class="text-gray-400 pl-4"><span class="text-green-300">src</span>=<span class="text-amber-300">"https://your-server.com/feedback-layer.js"</span></div>
+            <div class="text-gray-400 pl-4"><span class="text-green-300">data-api-url</span>=<span class="text-amber-300">"https://your-server.com"</span></div>
+            <div class="text-gray-400 pl-4"><span class="text-green-300">data-content-selector</span>=<span class="text-amber-300">"article"</span></div>
+            <div class="text-gray-400">&gt;&lt;/<span class="text-violet-400">script</span>&gt;</div>
+            <button class="copy-btn bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2.5 py-1.5 rounded-md text-xs transition-all" data-copy='<script
+  src="https://your-server.com/feedback-layer.js"
+  data-api-url="https://your-server.com"
+  data-content-selector="article"
+></script>'>Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats Bar -->
+  <section class="bg-violet-600 text-white py-6">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+        <div>
+          <div class="text-2xl font-bold">1</div>
+          <div class="text-violet-200 text-sm mt-1">script tag</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold">0</div>
+          <div class="text-violet-200 text-sm mt-1">accounts needed</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold">SQLite</div>
+          <div class="text-violet-200 text-sm mt-1">backed</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold">Self</div>
+          <div class="text-violet-200 text-sm mt-1">hosted</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Reviewers Section -->
+  <section id="reviewers" class="py-24 bg-white">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <p class="text-violet-600 font-semibold text-sm uppercase tracking-wider mb-3">For Reviewers</p>
+        <h2 class="text-3xl sm:text-4xl font-bold">Give feedback in seconds, not minutes</h2>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <!-- Card 1: Inline Annotations -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Inline Annotations</h3>
+          <p class="text-gray-600 leading-relaxed">Select any text to leave a comment right where it matters. No separate tool, no screenshots — just highlight and type.</p>
+        </div>
+        <!-- Card 2: No Accounts -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">No Accounts Needed</h3>
+          <p class="text-gray-600 leading-relaxed">Just type your name and start reviewing. No signup flow, no OAuth, no password to forget. Zero friction to first comment.</p>
+        </div>
+        <!-- Card 3: Threaded Replies -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Threaded Replies</h3>
+          <p class="text-gray-600 leading-relaxed">Reply to any annotation to start a focused discussion. Keep conversations organized by passage, not lost in a chat stream.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Authors Section -->
+  <section id="authors" class="py-24 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <p class="text-violet-600 font-semibold text-sm uppercase tracking-wider mb-3">For Authors</p>
+        <h2 class="text-3xl sm:text-4xl font-bold">From feedback to revision in one click</h2>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <!-- Card 4: Feedback in Context -->
+        <div class="fade-in bg-white rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Feedback in Context</h3>
+          <p class="text-gray-600 leading-relaxed">See all annotations in a sidebar, grouped by position. Click any comment to jump to the highlighted passage in your document.</p>
+        </div>
+        <!-- Card 5: AI Revision (highlighted) -->
+        <div class="fade-in bg-violet-600 rounded-2xl p-8 text-white border-2 border-violet-500 hover:border-violet-400 transition-colors relative overflow-hidden">
+          <div class="absolute top-4 right-4 bg-white/20 text-white text-xs font-semibold px-2.5 py-1 rounded-full">Featured</div>
+          <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">AI-Assisted Revision</h3>
+          <p class="text-violet-100 leading-relaxed">One click sends your document + all feedback to Claude. Get a structured revision prompt with every annotation — ready to paste.</p>
+        </div>
+        <!-- Card 6: Text Anchoring -->
+        <div class="fade-in bg-white rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Text Anchoring</h3>
+          <p class="text-gray-600 leading-relaxed">Annotations stay anchored to exact text using W3C TextQuoteSelectors. Highlights survive edits — feedback never gets lost.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Teams Section -->
+  <section id="teams" class="py-24 bg-white">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <p class="text-violet-600 font-semibold text-sm uppercase tracking-wider mb-3">For Teams</p>
+        <h2 class="text-3xl sm:text-4xl font-bold">Own your feedback infrastructure</h2>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-8">
+        <!-- Card 7: Single Script Tag -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Single Script Tag</h3>
+          <p class="text-gray-600 leading-relaxed">Add annotations to any HTML page with one line of code. No build step, no framework dependency, no config files.</p>
+        </div>
+        <!-- Card 8: Self-Hosted -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Self-Hosted, Zero Dependencies</h3>
+          <p class="text-gray-600 leading-relaxed">Node.js + SQLite. No external databases, no Docker, no third-party services. Your data stays on your infrastructure.</p>
+        </div>
+        <!-- Card 9: Resolve/Unresolve -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Resolve &amp; Unresolve</h3>
+          <p class="text-gray-600 leading-relaxed">Track which feedback has been addressed. Resolved annotations hide their highlights to reduce visual clutter.</p>
+        </div>
+        <!-- Card 10: Rich Content -->
+        <div class="fade-in bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:border-violet-200 transition-colors">
+          <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-5">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Diagrams &amp; SVGs</h3>
+          <p class="text-gray-600 leading-relaxed">The annotation layer works on any HTML content — including rendered Mermaid diagrams and inline SVGs. Feedback on visuals, not just prose.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="py-24 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <h2 class="text-3xl sm:text-4xl font-bold">How it works</h2>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="fade-in text-center">
+          <div class="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <span class="text-2xl font-bold text-violet-600">1</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Embed</h3>
+          <p class="text-gray-600">Add a single <code class="bg-gray-200 px-1.5 py-0.5 rounded text-sm">&lt;script&gt;</code> tag to any HTML page. The annotation UI loads automatically.</p>
+        </div>
+        <div class="fade-in text-center">
+          <div class="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <span class="text-2xl font-bold text-violet-600">2</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Review</h3>
+          <p class="text-gray-600">Reviewers select text and leave comments. Threaded replies keep discussions organized by passage.</p>
+        </div>
+        <div class="fade-in text-center">
+          <div class="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <span class="text-2xl font-bold text-violet-600">3</span>
+          </div>
+          <h3 class="text-xl font-semibold mb-3">Revise with AI</h3>
+          <p class="text-gray-600">Authors click one button to send all feedback to Claude. Get a structured revision prompt — ready to paste.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature Grid -->
+  <section class="py-24 bg-white">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <h2 class="text-3xl sm:text-4xl font-bold">Everything you need</h2>
+        <p class="text-gray-500 mt-3">No more than you don't.</p>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Inline Annotations</h4>
+            <p class="text-sm text-gray-500">Select text, leave a comment — right where it matters.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">No Accounts</h4>
+            <p class="text-sm text-gray-500">Reviewers just type a name. No signup needed.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Threaded Replies</h4>
+            <p class="text-sm text-gray-500">Focused discussions on specific passages.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Text Anchoring</h4>
+            <p class="text-sm text-gray-500">W3C TextQuoteSelectors survive edits.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">AI Revision</h4>
+            <p class="text-sm text-gray-500">One click to structured Claude revision prompt.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Resolve / Unresolve</h4>
+            <p class="text-sm text-gray-500">Track addressed feedback; hide resolved highlights.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Self-Hosted</h4>
+            <p class="text-sm text-gray-500">Node.js + SQLite. Your data, your server.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Keyboard Shortcuts</h4>
+            <p class="text-sm text-gray-500">Cmd+Enter to submit. Fast for power users.</p>
+          </div>
+        </div>
+        <div class="fade-in flex items-start gap-4 p-5 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          </div>
+          <div>
+            <h4 class="font-semibold mb-1">Drop-in Integration</h4>
+            <p class="text-sm text-gray-500">One script tag. Works on any HTML page.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Setup Section -->
+  <section id="setup" class="py-24 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16 fade-in">
+        <h2 class="text-3xl sm:text-4xl font-bold">Set up in 2 minutes</h2>
+        <p class="text-gray-500 mt-3">Clone, start, embed. That's it.</p>
+      </div>
+
+      <!-- Step 1: Run the server -->
+      <div class="max-w-3xl mx-auto mb-12 fade-in">
+        <h3 class="text-lg font-semibold mb-4">1. Start the server</h3>
+        <div class="code-block bg-gray-900 rounded-xl overflow-hidden">
+          <div class="p-5 font-mono text-sm leading-relaxed">
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">git clone</span> <span class="text-white">https://github.com/cass-clearly/remarq.git</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">cd</span> <span class="text-white">remarq</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">npm install</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">npm start</span></div>
+            <div class="mt-2 text-gray-500"># Server running at http://localhost:3333</div>
+            <button class="copy-btn bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2.5 py-1.5 rounded-md text-xs transition-all" data-copy="git clone https://github.com/cass-clearly/remarq.git
+cd remarq
+npm install
+npm start">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Embed -->
+      <div class="max-w-3xl mx-auto mb-12 fade-in">
+        <h3 class="text-lg font-semibold mb-4">2. Embed in your page</h3>
+        <div class="code-block bg-gray-900 rounded-xl overflow-hidden">
+          <div class="p-5 font-mono text-sm leading-relaxed">
+            <div class="text-gray-300">&lt;<span class="text-violet-400">script</span></div>
+            <div class="text-gray-300 pl-4"><span class="text-green-300">src</span>=<span class="text-amber-300">"https://your-server.com/feedback-layer.js"</span></div>
+            <div class="text-gray-300 pl-4"><span class="text-green-300">data-api-url</span>=<span class="text-amber-300">"https://your-server.com"</span></div>
+            <div class="text-gray-300 pl-4"><span class="text-green-300">data-content-selector</span>=<span class="text-amber-300">"article"</span></div>
+            <div class="text-gray-300">&gt;&lt;/<span class="text-violet-400">script</span>&gt;</div>
+            <button class="copy-btn bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2.5 py-1.5 rounded-md text-xs transition-all" data-copy='<script
+  src="https://your-server.com/feedback-layer.js"
+  data-api-url="https://your-server.com"
+  data-content-selector="article"
+></script>'>Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config table -->
+      <div class="max-w-3xl mx-auto fade-in">
+        <h3 class="text-lg font-semibold mb-4">Configuration</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b-2 border-gray-200">
+                <th class="py-3 pr-4 text-sm font-semibold text-gray-900">Attribute</th>
+                <th class="py-3 pr-4 text-sm font-semibold text-gray-900">Default</th>
+                <th class="py-3 text-sm font-semibold text-gray-900">Description</th>
+              </tr>
+            </thead>
+            <tbody class="text-sm">
+              <tr class="border-b border-gray-100">
+                <td class="py-3 pr-4 font-mono text-violet-600 whitespace-nowrap">data-api-url</td>
+                <td class="py-3 pr-4 text-gray-500 whitespace-nowrap"><code class="bg-gray-100 px-1.5 py-0.5 rounded">""</code> (same origin)</td>
+                <td class="py-3 text-gray-600">URL of the Remarq backend</td>
+              </tr>
+              <tr class="border-b border-gray-100">
+                <td class="py-3 pr-4 font-mono text-violet-600 whitespace-nowrap">data-content-selector</td>
+                <td class="py-3 pr-4 text-gray-500 whitespace-nowrap"><code class="bg-gray-100 px-1.5 py-0.5 rounded">body</code></td>
+                <td class="py-3 text-gray-600">CSS selector for the annotatable content area</td>
+              </tr>
+              <tr>
+                <td class="py-3 pr-4 font-mono text-violet-600 whitespace-nowrap">data-document-uri</td>
+                <td class="py-3 pr-4 text-gray-500 whitespace-nowrap">current page URL</td>
+                <td class="py-3 text-gray-600">Override the URI used to store/fetch annotations</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Footer -->
+  <section class="py-24 bg-gradient-to-br from-gray-950 via-violet-950 to-gray-950 text-white">
+    <div class="max-w-6xl mx-auto px-6 text-center">
+      <h2 class="text-3xl sm:text-4xl font-bold mb-4 fade-in">Ready to add annotations?</h2>
+      <p class="text-violet-200 mb-10 text-lg fade-in">Clone the repo. Start the server. Embed one script tag.</p>
+      <div class="flex flex-wrap justify-center gap-4 fade-in">
+        <a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="bg-violet-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-violet-500 transition-colors flex items-center gap-2">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+        <a href="https://www.npmjs.com/package/@csalvato/remarq" target="_blank" rel="noopener" class="border border-violet-400/30 text-violet-200 px-6 py-3 rounded-lg font-semibold hover:bg-violet-900/40 transition-colors">
+          npm install @csalvato/remarq
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-gray-950 text-gray-500 py-8">
+    <div class="max-w-6xl mx-auto px-6 text-center text-sm">
+      <p>Remarq is open source. <a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="text-violet-400 hover:text-violet-300 transition-colors">Star it on GitHub</a>.</p>
+    </div>
+  </footer>
+
+  <!-- Inline JS: Scroll behavior, animations, copy buttons -->
+  <script>
+    (function() {
+      'use strict';
+
+      // Sticky nav: show after scrolling past hero
+      var navbar = document.getElementById('navbar');
+      window.addEventListener('scroll', function() {
+        if (window.scrollY > 200) {
+          navbar.classList.remove('-translate-y-full');
+          navbar.classList.add('translate-y-0');
+        } else {
+          navbar.classList.add('-translate-y-full');
+          navbar.classList.remove('translate-y-0');
+        }
+      }, { passive: true });
+
+      // Smooth scroll for anchor links
+      document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+          var target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+
+      // IntersectionObserver fade-in
+      var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!prefersReduced) {
+        var observer = new IntersectionObserver(function(entries) {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.fade-in').forEach(function(el) {
+          observer.observe(el);
+        });
+      } else {
+        document.querySelectorAll('.fade-in').forEach(function(el) {
+          el.classList.add('visible');
+        });
+      }
+
+      // Copy buttons
+      document.querySelectorAll('.copy-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var text = this.getAttribute('data-copy');
+          navigator.clipboard.writeText(text).then(function() {
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(function() {
+              btn.textContent = 'Copy';
+              btn.classList.remove('copied');
+            }, 2000);
+          }).catch(function() {});
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
