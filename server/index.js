@@ -94,6 +94,12 @@ async function findOrCreateDocument(uri) {
   }
 }
 
+// ── Health check ────────────────────────────────────────────────────
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 // ── Document endpoints ──────────────────────────────────────────────
 
 app.get("/documents", asyncHandler(async (_req, res) => {

@@ -130,6 +130,17 @@ describe("API", async () => {
     await pool.query("DELETE FROM documents");
   });
 
+  // ── Health check ─────────────────────────────────────────────
+
+  describe("GET /health", () => {
+    it("returns 200 with status ok", async () => {
+      const res = await fetch(`${BASE}/health`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.deepEqual(json, { status: "ok" });
+    });
+  });
+
   // ── Documents ─────────────────────────────────────────────────
 
   describe("GET /documents", () => {
