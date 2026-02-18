@@ -71,7 +71,7 @@ npm install --prefix server
 DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 ```
 
-The `DATABASE_URL` environment variable is required. The server creates tables automatically on first start. Set the `PORT` environment variable to change the listen port (default 3333).
+If `DATABASE_URL` is not set, it defaults to `postgresql://postgres@localhost/postgres`. The server creates tables automatically on first start. Set the `PORT` environment variable to change the listen port (default 3333).
 
 ## Author Mode
 
