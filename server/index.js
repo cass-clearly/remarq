@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
@@ -239,13 +240,23 @@ app.use((err, _req, res, _next) => {
 
 // ── Start server ────────────────────────────────────────────────────
 
-if (require.main === module) {
-  const PORT = process.env.PORT || 3333;
-  initSchema().then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Remarq server listening on http://localhost:${PORT}`);
+async function start(options = {}) {
+  const port = options.port !== undefined ? options.port : (process.env.PORT || 3333);
+  const host = options.host || "0.0.0.0";
+  await initSchema();
+  return new Promise((resolve) => {
+    const server = app.listen(port, host, () => {
+      console.log(`Remarq server listening on http://localhost:${port}`);
+      resolve(server);
     });
   });
 }
 
-module.exports = { app, pool, initSchema };
+if (require.main === module) {
+  start().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { start, app, pool, initSchema };

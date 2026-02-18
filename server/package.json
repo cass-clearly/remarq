@@ -1,10 +1,20 @@
 {
   "name": "remarq-server",
-  "version": "1.0.0",
-  "private": true,
+  "version": "1.2.0",
+  "description": "Lightweight document annotation server for Remarq",
+  "main": "index.js",
+  "bin": {
+    "remarq-server": "index.js"
+  },
   "scripts": {
     "start": "node index.js"
   },
+  "files": [
+    "index.js",
+    "generate-id.js",
+    "normalize-uri.js",
+    "sanitize.js"
+  ],
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.0",
