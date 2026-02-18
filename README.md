@@ -62,7 +62,7 @@ Then start the stack:
 docker compose -f docker-compose.remarq.yml up --build -d
 ```
 
-The compose file reads `POSTGRES_PASSWORD` from the environment and passes it to both Postgres and the server. If no `.env` is present, it defaults to `remarq` — fine for local development, not for production.
+The compose file reads `POSTGRES_PASSWORD` from the environment and passes it to both Postgres and the server. If no `.env` is present, it defaults to `remarq` — fine for local development, not for production. Avoid `@`, `/`, `:`, and `%` in the password (or URL-encode them) since it's interpolated into the database connection string.
 
 ### Direct (bring your own Postgres)
 
