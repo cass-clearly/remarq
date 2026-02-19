@@ -176,6 +176,7 @@ Your team's feedback shouldn't rot in a Google Docs sidebar. Build the agent loo
 
 ```bash
 git clone https://github.com/cass-clearly/remarq.git
+cd remarq
 docker compose -f docker-compose.remarq.yml up --build
 ```
 
@@ -183,4 +184,4 @@ docker compose -f docker-compose.remarq.yml up --build
 
 ---
 
-[MIT License](LICENSE) · Built by [cass-clearly](https://github.com/cass-clearly)
+Built by [cass-clearly](https://github.com/cass-clearly)
