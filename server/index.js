@@ -44,7 +44,7 @@ async function initSchema() {
   `);
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
-  await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL`);
+  await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
