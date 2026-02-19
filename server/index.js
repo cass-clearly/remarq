@@ -133,10 +133,18 @@ app.delete("/documents/:id", asyncHandler(async (req, res) => {
 // ── Comment endpoints ───────────────────────────────────────────────
 
 app.get("/comments", asyncHandler(async (req, res) => {
-  const { document: docId, uri } = req.query;
+  const { document: docId, uri, status } = req.query;
+
+  if (status !== undefined && status !== "open" && status !== "closed") {
+    return res.status(400).json(errorResponse('status must be "open" or "closed"'));
+  }
 
   if (docId) {
-    const { rows } = await pool.query("SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC", [docId]);
+    const query = status
+      ? "SELECT * FROM comments WHERE document = $1 AND status = $2 ORDER BY created_at ASC"
+      : "SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC";
+    const params = status ? [docId, status] : [docId];
+    const { rows } = await pool.query(query, params);
     return res.json(listResponse(rows.map(formatComment)));
   }
 
@@ -145,7 +153,11 @@ app.get("/comments", asyncHandler(async (req, res) => {
     try { normalized = normalizeUri(uri); } catch { normalized = uri; }
     const docResult = await pool.query("SELECT id FROM documents WHERE uri = $1", [normalized]);
     if (docResult.rows.length === 0) return res.json(listResponse([]));
-    const { rows } = await pool.query("SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC", [docResult.rows[0].id]);
+    const query = status
+      ? "SELECT * FROM comments WHERE document = $1 AND status = $2 ORDER BY created_at ASC"
+      : "SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC";
+    const params = status ? [docResult.rows[0].id, status] : [docResult.rows[0].id];
+    const { rows } = await pool.query(query, params);
     return res.json(listResponse(rows.map(formatComment)));
   }
 

@@ -430,6 +430,113 @@ describe("API", async () => {
       const res = await fetch(`${BASE}/comments`);
       assert.equal(res.status, 400);
     });
+
+    it("filters by status=open", async () => {
+      const uri = "https://example.com/status-open";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?document=${c1.document}&status=open`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c1.id);
+    });
+
+    it("filters by status=closed", async () => {
+      const uri = "https://example.com/status-closed";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?document=${c1.document}&status=closed`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c2.id);
+    });
+
+    it("returns all when no status param", async () => {
+      const uri = "https://example.com/status-all";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments?document=${c1.document}`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 2);
+    });
+
+    it("returns 400 for invalid status", async () => {
+      const c = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/status-invalid", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments?document=${c.document}&status=invalid`);
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("status"));
+    });
+
+    it("status filter works with uri param", async () => {
+      const uri = "https://example.com/status-uri-filter";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&status=open`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c1.id);
+    });
   });
 
   describe("GET /comments/:id", () => {
