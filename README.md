@@ -114,12 +114,17 @@ The API follows a Stripe-like resource pattern. All responses include an `object
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/comments` | List all comments |
 | `GET` | `/comments?document=<id>` | List comments by document ID |
 | `GET` | `/comments?uri=<url>` | List comments by document URI |
+| `GET` | `/comments?status=open` | List open threads (roots + their replies) |
+| `GET` | `/comments?expand=document` | Hydrate document objects inline |
 | `POST` | `/comments` | Create a comment |
 | `GET` | `/comments/:id` | Retrieve a comment |
-| `PATCH` | `/comments/:id` | Update body or status |
+| `PATCH` | `/comments/:id` | Update body or status (root comments only) |
 | `DELETE` | `/comments/:id` | Delete a comment and its replies |
+
+Status is a thread-level concept — only root comments have status (`"open"` or `"closed"`). Replies always have `status: null`. The `?status=` filter matches root comments and includes all their replies. Query params can be combined (e.g. `?document=<id>&status=open&expand=document`).
 
 ### POST /comments body
 

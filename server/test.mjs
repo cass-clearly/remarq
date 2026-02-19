@@ -317,6 +317,7 @@ describe("API", async () => {
       const json = await res.json();
       assert.equal(res.status, 201);
       assert.equal(json.parent, parentJson.id);
+      assert.equal(json.status, null);
     });
 
     it("returns 400 when body is missing", async () => {
@@ -426,17 +427,32 @@ describe("API", async () => {
       assert.deepEqual(json, { object: "list", data: [] });
     });
 
-    it("returns 400 without document or uri param", async () => {
+    it("returns all comments without document or uri param", async () => {
+      // Create a comment so we have something to return
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/all", quote: "q", body: "b", author: "a" }),
+      });
       const res = await fetch(`${BASE}/comments`);
-      assert.equal(res.status, 400);
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.object, "list");
+      assert.ok(json.data.length >= 1);
     });
 
-    it("filters by status=open", async () => {
+    it("filters by status=open and includes replies", async () => {
       const uri = "https://example.com/status-open";
       const c1 = await (await fetch(`${BASE}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      // Add a reply to the open root
+      const r1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, body: "reply to open", author: "a", parent: c1.id }),
       })).json();
       const c2 = await (await fetch(`${BASE}/comments`, {
         method: "POST",
@@ -452,11 +468,14 @@ describe("API", async () => {
       const res = await fetch(`${BASE}/comments?document=${c1.document}&status=open`);
       const json = await res.json();
       assert.equal(res.status, 200);
-      assert.equal(json.data.length, 1);
+      assert.equal(json.data.length, 2);
       assert.equal(json.data[0].id, c1.id);
+      assert.equal(json.data[0].status, "open");
+      assert.equal(json.data[1].id, r1.id);
+      assert.equal(json.data[1].status, null);
     });
 
-    it("filters by status=closed", async () => {
+    it("filters by status=closed and includes replies", async () => {
       const uri = "https://example.com/status-closed";
       const c1 = await (await fetch(`${BASE}/comments`, {
         method: "POST",
@@ -468,6 +487,12 @@ describe("API", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
       })).json();
+      // Add a reply to c2 before closing it
+      const r2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, body: "reply to closed", author: "a", parent: c2.id }),
+      })).json();
       await fetch(`${BASE}/comments/${c2.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -477,11 +502,14 @@ describe("API", async () => {
       const res = await fetch(`${BASE}/comments?document=${c1.document}&status=closed`);
       const json = await res.json();
       assert.equal(res.status, 200);
-      assert.equal(json.data.length, 1);
+      assert.equal(json.data.length, 2);
       assert.equal(json.data[0].id, c2.id);
+      assert.equal(json.data[0].status, "closed");
+      assert.equal(json.data[1].id, r2.id);
+      assert.equal(json.data[1].status, null);
     });
 
-    it("returns all when no status param", async () => {
+    it("returns all when no status param, replies have null status", async () => {
       const uri = "https://example.com/status-all";
       const c1 = await (await fetch(`${BASE}/comments`, {
         method: "POST",
@@ -493,11 +521,22 @@ describe("API", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uri, quote: "q2", body: "closed one", author: "a" }),
       })).json();
+      // Add a reply
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, body: "reply", author: "a", parent: c1.id }),
+      });
 
       const res = await fetch(`${BASE}/comments?document=${c1.document}`);
       const json = await res.json();
       assert.equal(res.status, 200);
-      assert.equal(json.data.length, 2);
+      assert.equal(json.data.length, 3);
+      // Root comments have status, replies have null
+      const roots = json.data.filter((c) => !c.parent);
+      const replies = json.data.filter((c) => c.parent);
+      roots.forEach((c) => assert.ok(c.status === "open" || c.status === "closed"));
+      replies.forEach((c) => assert.equal(c.status, null));
     });
 
     it("returns 400 for invalid status", async () => {
@@ -520,6 +559,12 @@ describe("API", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
       })).json();
+      // Add reply to open root
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, body: "reply", author: "a", parent: c1.id }),
+      });
       const c2 = await (await fetch(`${BASE}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -534,7 +579,7 @@ describe("API", async () => {
       const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&status=open`);
       const json = await res.json();
       assert.equal(res.status, 200);
-      assert.equal(json.data.length, 1);
+      assert.equal(json.data.length, 2); // root + reply
       assert.equal(json.data[0].id, c1.id);
     });
   });
@@ -646,6 +691,143 @@ describe("API", async () => {
         body: JSON.stringify({ body: "new" }),
       });
       assert.equal(res.status, 404);
+    });
+  });
+
+  describe("GET /comments cross-document and expand", () => {
+    it("GET /comments?status=open without document/uri returns cross-document results", async () => {
+      const uri1 = "https://example.com/cross-doc-1";
+      const uri2 = "https://example.com/cross-doc-2";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: uri1, quote: "q1", body: "open doc1", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: uri2, quote: "q2", body: "open doc2", author: "a" }),
+      })).json();
+      // Add reply to c1
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: uri1, body: "reply", author: "a", parent: c1.id }),
+      });
+      // Close c2
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?status=open`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      // Should include c1 (open root) and its reply, but not c2 (closed)
+      const ids = json.data.map((c) => c.id);
+      assert.ok(ids.includes(c1.id));
+      assert.ok(!ids.includes(c2.id));
+      // reply should be in results
+      const reply = json.data.find((c) => c.parent === c1.id);
+      assert.ok(reply);
+      assert.equal(reply.status, null);
+    });
+
+    it("GET /comments?document=X&expand=document hydrates document object", async () => {
+      const uri = "https://example.com/expand-test";
+      const c = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments?document=${c.document}&expand=document`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data[0].document.object, "document");
+      assert.equal(json.data[0].document.uri, uri);
+      assert.ok(json.data[0].document.id);
+    });
+
+    it("GET /comments?status=open&expand=document cross-document with hydration", async () => {
+      const uri = "https://example.com/expand-cross";
+      const c = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments?status=open&expand=document`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      const match = json.data.find((d) => d.id === c.id);
+      assert.ok(match);
+      assert.equal(match.document.object, "document");
+      assert.equal(match.document.uri, uri);
+    });
+
+    it("GET /comments/:id?expand=document hydrates on single-resource fetch", async () => {
+      const uri = "https://example.com/expand-single";
+      const c = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${c.id}?expand=document`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.document.object, "document");
+      assert.equal(json.document.uri, uri);
+      assert.ok(json.document.id);
+    });
+  });
+
+  describe("PATCH /comments/:id reply guards", () => {
+    it("returns 400 when setting status on a reply", async () => {
+      const parent = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/patch-reply", quote: "q", body: "parent", author: "a" }),
+      })).json();
+      const reply = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/patch-reply", body: "reply", author: "a", parent: parent.id }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${reply.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("replies"));
+    });
+
+    it("allows updating body on a reply", async () => {
+      const parent = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/patch-reply-body", quote: "q", body: "parent", author: "a" }),
+      })).json();
+      const reply = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/patch-reply-body", body: "old reply", author: "a", parent: parent.id }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${reply.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "updated reply" }),
+      });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.body, "updated reply");
+      assert.equal(json.status, null);
     });
   });
 
