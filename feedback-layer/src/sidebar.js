@@ -774,6 +774,13 @@ function injectStyles() {
       white-space: nowrap;
       transition: all 0.2s ease;
       animation: fb-tooltip-appear 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fb-annotate-tooltip svg {
+      width: 14px;
+      height: 14px;
     }
     .fb-annotate-tooltip::after {
       content: '';
