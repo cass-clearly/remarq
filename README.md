@@ -1,12 +1,39 @@
 # Remarq
 
-Lightweight document annotation tool. Reviewers highlight text and leave threaded comments — no accounts needed, just enter a name. A built-in sidebar button sends all feedback to Claude for AI-assisted revision.
+### Google Docs comments are where feedback goes to die. We built the antidote.
+
+Remarq is a lightweight document annotation tool for the agent era. Drop a single `<script>` tag into any HTML page — reviewers highlight text and leave threaded comments (no accounts needed). Then your AI agent polls the API, revises the document, and resolves comments automatically.
+
+**The feedback loop isn't just faster. It's closed.**
+
+---
+
+## The Problem
+
+You know the drill. Someone leaves a comment on your Google Doc: *"this is confusing."* Great. Now you get to:
+
+1. Read all 47 comments
+2. Interpret what each reviewer actually meant
+3. Manually edit the document
+4. Click "Resolve" on each one
+5. Miss three of them
+6. Get a passive-aggressive follow-up email
+
+For a 50-page doc, that's hours of your life you'll never get back. And if you're copy-pasting feedback into ChatGPT? You're living in the stone age.
+
+Google Docs is a word processor cosplaying as a collaboration tool. It was built in 2006. We can do better.
+
+## The Solution
+
+```
+Reviewer highlights text → leaves comment → agent reads API → agent revises → agent resolves → done.
+```
+
+That's Remarq. Human judgment in, machine execution out. The feedback cycle is closed.
 
 ## Quick Start
 
 ### 1. Start the backend
-
-Requires Docker.
 
 ```bash
 git clone https://github.com/cass-clearly/remarq.git
@@ -14,11 +41,9 @@ cd remarq
 docker compose -f docker-compose.remarq.yml up --build
 ```
 
-This starts Postgres and the Remarq server on port 3333. For production, see [Production](#production) to set a secure database password.
+Backend runs on port 3333. Visit **http://localhost:3333** for the demo.
 
-### 2. Add to your page
-
-Drop a single script tag into any HTML page:
+### 2. Add to any HTML page
 
 ```html
 <script
@@ -28,7 +53,30 @@ Drop a single script tag into any HTML page:
 ></script>
 ```
 
-That's it. The sidebar, text selection, highlights, and annotation UI are all handled automatically. Visit **http://localhost:3333** to try the built-in demo page.
+**One script tag. That's the whole integration.** Works on any HTML page — your blog, your docs, your marketing site, your contracts. Not trapped in a proprietary editor.
+
+### 3. Let your agent close the loop
+
+```bash
+# Get open feedback
+curl "http://localhost:3333/comments?status=open&document=DOC_ID"
+
+# Your agent gets structured annotations with exact text anchors,
+# threaded replies, and author context. It knows exactly what to fix.
+```
+
+This is the superpower. Every other annotation tool treats comments as a human-to-human channel. Remarq treats them as **an API for your agent to consume.**
+
+## Why Remarq
+
+| | Google Docs | Remarq |
+|---|---|---|
+| **Feedback workflow** | Manual. Read → interpret → edit → resolve. Repeat 47 times. | Automated. Agent reads API → revises → resolves. |
+| **Accounts required** | Google account for every reviewer | None. Type a name, start annotating. |
+| **Works on** | Google Docs only | Any HTML page |
+| **Data ownership** | Google's servers | Your server |
+| **Integration** | Copy-paste into ChatGPT | `GET /comments?status=open` |
+| **Built for** | 2006 | The agent era |
 
 ## Configuration
 
@@ -40,29 +88,19 @@ Configure via `data-` attributes on the script tag:
 | `data-content-selector` | `body` | CSS selector for the annotatable content area |
 | `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
 
-### Same-Origin vs Cross-Origin
-
-**Same-origin (simplest):** If the backend serves your HTML files too (like the demo), you don't need `data-api-url` at all — it defaults to the same origin.
-
-**Cross-origin:** If your pages are hosted elsewhere, point `data-api-url` to wherever the backend is running. The backend has CORS enabled for all origins.
-
 ## Production
 
 ### Docker Compose (recommended)
 
-Create a `.env` file next to `docker-compose.remarq.yml`:
+Create a `.env` file:
 
 ```
 POSTGRES_PASSWORD=your-secure-password-here
 ```
 
-Then start the stack:
-
 ```bash
 docker compose -f docker-compose.remarq.yml up --build -d
 ```
-
-The compose file reads `POSTGRES_PASSWORD` from the environment and passes it to both Postgres and the server. If no `.env` is present, it defaults to `remarq` — fine for local development, not for production. Avoid `@`, `/`, `:`, and `%` in the password (or URL-encode them) since it's interpolated into the database connection string.
 
 ### Direct (bring your own Postgres)
 
@@ -70,36 +108,16 @@ The compose file reads `POSTGRES_PASSWORD` from the environment and passes it to
 npx @csalvato/remarq-server
 ```
 
-Or if cloning the repo:
+Or:
 
 ```bash
 npm install --prefix server
 DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 ```
 
-If `DATABASE_URL` is not set, it defaults to `postgresql://postgres@localhost/postgres`. The server creates tables automatically on first start. Set the `PORT` environment variable to change the listen port (default 3333).
-
-## AI Revision
-
-Click the sparkle button in the sidebar header to generate a revision prompt. It:
-
-1. Collects all annotations (with threaded replies)
-2. Formats them into a structured revision prompt alongside the document HTML
-3. Displays the prompt in a modal — copy and paste into Claude
-
-## Features
-
-- **No accounts** — reviewers just type their name
-- **Text anchoring** — annotations are anchored to specific text passages using TextQuoteSelectors (via Apache Annotator), so highlights survive minor edits
-- **Threaded replies** — reply to any annotation to create a discussion
-- **Resolve/unresolve** — mark feedback as addressed; resolved annotations hide their highlights
-- **Keyboard shortcuts** — Cmd+Enter (Ctrl+Enter on Windows) to submit comments and replies
-- **Persistent storage** — PostgreSQL database via Docker
-- **Drop-in integration** — one script tag on any HTML page
-
 ## API Reference
 
-The API follows a Stripe-like resource pattern. All responses include an `object` field identifying the resource type.
+Stripe-inspired resource pattern. All responses include an `object` field.
 
 ### Documents
 
@@ -117,9 +135,9 @@ The API follows a Stripe-like resource pattern. All responses include an `object
 | `GET` | `/comments` | List all comments |
 | `GET` | `/comments?document=<id>` | List comments by document ID |
 | `GET` | `/comments?uri=<url>` | List comments by document URI |
-| `GET` | `/comments?status=open` | List open threads (roots + their replies) |
+| `GET` | `/comments?status=open` | **The money endpoint.** Get all unresolved feedback. |
 | `GET` | `/comments?expand=document` | Hydrate document objects inline |
-| `POST` | `/comments` | Create a comment |
+| `POST` | `/comments` | Create a comment (set `parent` to reply to an existing comment) |
 | `GET` | `/comments/:id` | Retrieve a comment |
 | `PATCH` | `/comments/:id` | Update body or status (root comments only) |
 | `DELETE` | `/comments/:id` | Delete a comment and its replies |
@@ -142,47 +160,28 @@ Status is a thread-level concept — only root comments have status (`"open"` or
 
 For replies, set `parent` to the parent comment's ID. Replies don't need `quote`/`prefix`/`suffix`.
 
-## Project Structure
+## Features
 
-```
-remarq/
-├── package.json                 # Root: build + test scripts
-├── docker-compose.remarq.yml   # Postgres + server (production)
-├── server/
-│   ├── package.json             # @csalvato/remarq-server — express, pg, cors
-│   ├── Dockerfile               # Node 22 Alpine container
-│   ├── index.js                 # API server + static file serving
-│   ├── generate-id.js           # Prefixed ID generation (doc_*, cmt_*)
-│   ├── normalize-uri.js         # URI normalization
-│   ├── sanitize.js              # HTML sanitization
-│   └── test.mjs                 # Unit + integration tests
-├── feedback-layer/
-│   ├── package.json             # @apache-annotator/dom, esbuild
-│   ├── build.js                 # esbuild bundler config
-│   └── src/
-│       ├── index.js             # Entry point — orchestration
-│       ├── api.js               # Backend API client
-│       ├── anchoring.js         # Text selection ↔ selectors
-│       ├── highlights.js        # Highlight rendering
-│       ├── sidebar.js           # Sidebar UI
-│       ├── prompt-builder.js    # Annotation → Claude prompt
-│       └── ui.js                # AI revision modal
-├── serve/
-│   ├── index.html               # Demo page
-│   └── feedback-layer.js        # Pre-built bundle (committed)
-├── test-e2e.mjs                 # Puppeteer E2E tests
-└── test.sh                      # Build + test runner
-```
+- **No accounts** — reviewers just type their name
+- **Text anchoring** — annotations are anchored to specific text passages using TextQuoteSelectors (via Apache Annotator), so highlights survive minor edits
+- **Threaded replies** — discuss any annotation
+- **Resolve/unresolve** — mark feedback as addressed
+- **Keyboard shortcuts** — Cmd+Enter to submit
+- **One script tag** — drop-in integration for any HTML page
+- **Agent-ready API** — structured feedback your AI can consume and act on
 
-## Running Tests
+## The Bottom Line
 
-Requires Docker (for Postgres).
+Your team's feedback shouldn't rot in a Google Docs sidebar. Build the agent loop. Close the feedback cycle. Ship faster.
 
 ```bash
-# Server unit + integration tests
-docker compose -f docker-compose.remarq.yml up -d postgres
-DATABASE_URL=postgres://remarq:remarq@localhost:5433/remarq npm run test:server
-
-# Full E2E (builds frontend, starts server, runs Puppeteer)
-bash test.sh
+git clone https://github.com/cass-clearly/remarq.git
+cd remarq
+docker compose -f docker-compose.remarq.yml up --build
 ```
+
+**Star the repo if you're tired of manually resolving comments.**
+
+---
+
+Built by [cass-clearly](https://github.com/cass-clearly)
