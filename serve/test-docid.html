@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document ID Test</title>
+  <style>
+    body { max-width: 720px; margin: 40px auto; padding: 0 20px; font-family: sans-serif; line-height: 1.7; }
+  </style>
+</head>
+<body>
+
+<article>
+  <h1>Document ID Binding Test</h1>
+  <p>
+    This page tests that comments are keyed by a stable document ID rather than
+    by the page URI. Select text below to annotate it.
+  </p>
+  <p>
+    The quick brown fox jumps over the lazy dog. This sentence exists so the
+    E2E test has selectable content to anchor a comment to.
+  </p>
+</article>
+
+<script>
+  // Read docId from query string and inject the feedback-layer script tag
+  // with data-document-id set dynamically.
+  const params = new URLSearchParams(window.location.search);
+  const docId = params.get("docId");
+  if (docId) {
+    const script = document.createElement("script");
+    script.src = "/feedback-layer.js";
+    script.dataset.contentSelector = "article";
+    script.dataset.documentId = docId;
+    document.body.appendChild(script);
+  }
+</script>
+
+</body>
+</html>

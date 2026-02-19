@@ -7,7 +7,12 @@
  *   <script src="feedback-layer.js"
  *     data-api-url="http://localhost:3333"
  *     data-content-selector="article"
+ *     data-document-id="doc_abc123"
  *   ></script>
+ *
+ * When data-document-id is set, comments are keyed by document ID instead of
+ * page URI. This keeps annotations stable when the host changes (e.g., local
+ * dev → staging → production).
  */
 
 import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
@@ -31,6 +36,7 @@ import { initAuthorUI } from "./ui.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
+let _docId = null;      // stable document ID (from data-document-id)
 let _comments = [];     // current comment list
 let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
@@ -46,6 +52,7 @@ function init() {
     apiUrl: scriptTag?.dataset.apiUrl || "",
     contentSelector: scriptTag?.dataset.contentSelector || "body",
     documentUri: scriptTag?.dataset.documentUri || null,
+    documentId: scriptTag?.dataset.documentId || null,
     proxyUrl: scriptTag?.dataset.proxyUrl || null,
     model: scriptTag?.dataset.model || null,
   };
@@ -83,6 +90,7 @@ function init() {
   const boot = async () => {
     _root = document.querySelector(config.contentSelector) || document.body;
     _docUri = config.documentUri || window.location.origin + window.location.pathname;
+    _docId = config.documentId || null;
 
     // Sidebar
     createSidebar({
@@ -122,7 +130,7 @@ function init() {
 
 async function loadComments() {
   try {
-    _comments = await fetchComments(_docUri);
+    _comments = await fetchComments(_docUri, _docId);
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
     renderComments(_comments, _anchoredIds, _commentRanges);
@@ -241,6 +249,7 @@ async function handleCommentSubmit({ comment, commenter }) {
   try {
     const ann = await createComment({
       uri: _docUri,
+      document: _docId,
       quote: _pendingSelector.exact,
       prefix: _pendingSelector.prefix,
       suffix: _pendingSelector.suffix,
@@ -307,6 +316,7 @@ async function handleReply({ parent_id, comment, commenter }) {
   try {
     const reply = await createComment({
       uri: _docUri,
+      document: _docId,
       body: comment,
       author: commenter,
       parent: parent_id,

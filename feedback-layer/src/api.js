@@ -8,10 +8,11 @@ export function setBaseUrl(url) {
   _baseUrl = url.replace(/\/+$/, "");
 }
 
-export async function fetchComments(uri) {
-  const res = await fetch(
-    `${_baseUrl}/comments?uri=${encodeURIComponent(uri)}`
-  );
+export async function fetchComments(uri, documentId) {
+  const query = documentId
+    ? `document=${encodeURIComponent(documentId)}`
+    : `uri=${encodeURIComponent(uri)}`;
+  const res = await fetch(`${_baseUrl}/comments?${query}`);
   if (!res.ok) throw new Error(`Failed to fetch comments: ${res.status}`);
   const json = await res.json();
   return json.data;
@@ -19,6 +20,7 @@ export async function fetchComments(uri) {
 
 export async function createComment({
   uri,
+  document,
   quote,
   prefix,
   suffix,
@@ -26,10 +28,16 @@ export async function createComment({
   author,
   parent,
 }) {
+  const payload = { quote, prefix, suffix, body, author, parent };
+  if (document) {
+    payload.document = document;
+  } else {
+    payload.uri = uri;
+  }
   const res = await fetch(`${_baseUrl}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uri, quote, prefix, suffix, body, author, parent }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: { message: res.statusText } }));

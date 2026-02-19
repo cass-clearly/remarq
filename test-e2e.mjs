@@ -24,6 +24,7 @@ async function run() {
     await testCommentPersistsOnReload();
     await testDeleteComment();
     await testAuthorMode();
+    await testDocumentIdBinding();
     console.log("\n✅ All tests passed!");
   } catch (err) {
     console.error("\n❌ Test failed:", err.message);
@@ -235,6 +236,100 @@ async function testAuthorMode() {
 
   // Clean up
   await cleanDB();
+  await page.close();
+  console.log("OK");
+}
+
+async function testDocumentIdBinding() {
+  process.stdout.write("Test: document ID binding... ");
+
+  // 1. Create a document via the API to get a stable ID (unique URI per run)
+  const uniqueUri = `https://example.com/e2e-docid-test-${Date.now()}`;
+  const docRes = await fetch(API + "/documents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uri: uniqueUri }),
+  });
+  if (!docRes.ok) throw new Error(`Failed to create document: ${docRes.status}`);
+  const doc = await docRes.json();
+  const docId = doc.id;
+
+  // 2. Navigate to test-docid.html with the document ID in the query string
+  const page = await browser.newPage();
+  collectErrors(page);
+  await page.goto(BASE + `/test-docid.html?docId=${docId}`, { waitUntil: "networkidle0" });
+
+  // Wait for sidebar to render
+  await page.waitForSelector(".fb-sidebar", { timeout: 3000 });
+
+  // 3. Clear any stored name, enter a fresh name, and create a comment via text selection
+  await page.$eval(".fb-name-input", (el) => (el.value = ""));
+  await page.type(".fb-name-input", "DocIdTester");
+
+  const created = await page.evaluate(async () => {
+    const article = document.querySelector("article");
+    const h1 = article.querySelector("h1");
+    const textNode = h1.firstChild;
+    if (!textNode) return { error: "H1 text node not found" };
+
+    // Select "Binding Test" from "Document ID Binding Test"
+    const target = "Binding Test";
+    const offset = textNode.textContent.indexOf(target);
+    if (offset === -1) return { error: "Target text not found in H1" };
+
+    const range = document.createRange();
+    range.setStart(textNode, offset);
+    range.setEnd(textNode, offset + target.length);
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 100));
+
+    const tooltip = document.querySelector(".fb-annotate-tooltip");
+    if (!tooltip) return { error: "Tooltip not found" };
+
+    tooltip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 200));
+
+    const form = document.querySelector(".fb-form-card");
+    if (!form) return { error: "Comment form not found" };
+
+    return { ok: true };
+  });
+
+  if (created.error) throw new Error(created.error);
+
+  await page.type(".fb-form-textarea", "Comment bound to document ID");
+  await page.click(".fb-submit-btn");
+  await page.waitForSelector(".fb-cmt-card", { timeout: 3000 });
+
+  // 4. Verify GET /comments?document=<id> returns the comment
+  const byDoc = await fetch(API + `/comments?document=${encodeURIComponent(docId)}`);
+  const byDocJson = await byDoc.json();
+  if (byDocJson.data.length !== 1) {
+    throw new Error(`Expected 1 comment by document ID, got ${byDocJson.data.length}`);
+  }
+  if (byDocJson.data[0].author !== "DocIdTester") {
+    throw new Error("Wrong author for document-keyed comment");
+  }
+
+  // 5. Verify GET /comments?uri=<page-url> returns nothing
+  const pageUrl = `http://localhost:3333/test-docid.html?docId=${docId}`;
+  const byUri = await fetch(API + `/comments?uri=${encodeURIComponent(pageUrl)}`);
+  const byUriJson = await byUri.json();
+  if (byUriJson.data.length !== 0) {
+    throw new Error(`Expected 0 comments by URI, got ${byUriJson.data.length}`);
+  }
+
+  // Clean up: delete the comment and document
+  for (const c of byDocJson.data) {
+    await fetch(API + `/comments/${c.id}`, { method: "DELETE" });
+  }
+  await fetch(API + `/documents/${docId}`, { method: "DELETE" });
+
   await page.close();
   console.log("OK");
 }
