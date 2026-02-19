@@ -271,10 +271,18 @@ docker compose -f docker-compose.remarq.yml up --build">Copy</button>
               <div class="text-green-300">GET <span class="text-white">/comments?status=open&amp;document=doc_123</span></div>
               <div class="mt-3 text-gray-400"><span class="text-violet-300">#</span> Gets back structured, actionable annotations</div>
               <div class="text-amber-300">{</div>
+              <div class="text-white pl-2">"object": <span class="text-green-300">"list"</span>,</div>
               <div class="text-white pl-2">"data": [{</div>
+              <div class="text-white pl-4">"object": <span class="text-green-300">"comment"</span>,</div>
               <div class="text-white pl-4">"body": <span class="text-green-300">"Too technical for our audience"</span>,</div>
-              <div class="text-white pl-4">"target": { "exact": <span class="text-green-300">"quantum entanglement..."</span> },</div>
-              <div class="text-white pl-4">"replies": [{ "body": <span class="text-green-300">"Aim for 8th grade level"</span> }]</div>
+              <div class="text-white pl-4">"quote": <span class="text-green-300">"quantum entanglement enables..."</span>,</div>
+              <div class="text-white pl-4">"author": <span class="text-green-300">"Sarah"</span>,</div>
+              <div class="text-white pl-4">"status": <span class="text-green-300">"open"</span></div>
+              <div class="text-white pl-2">}, {</div>
+              <div class="text-white pl-4">"object": <span class="text-green-300">"comment"</span>,</div>
+              <div class="text-white pl-4">"body": <span class="text-green-300">"Aim for 8th grade level"</span>,</div>
+              <div class="text-white pl-4">"parent": <span class="text-green-300">"cmt_abc123"</span>,</div>
+              <div class="text-white pl-4">"author": <span class="text-green-300">"Mike"</span></div>
               <div class="text-white pl-2">}]</div>
               <div class="text-amber-300">}</div>
               <div class="mt-3 text-gray-400"><span class="text-violet-300">#</span> Agent revises. Agent resolves. Done.</div>
@@ -396,9 +404,11 @@ docker compose -f docker-compose.remarq.yml up --build">Copy</button>
           </div>
           <div class="code-block p-5 font-mono text-sm leading-relaxed">
             <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">git clone</span> <span class="text-white">https://github.com/cass-clearly/remarq.git</span></div>
+            <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">cd</span> <span class="text-white">remarq</span></div>
             <div class="text-gray-400"><span class="text-violet-400">$</span> <span class="text-green-300">docker compose</span> <span class="text-white">-f docker-compose.remarq.yml up --build</span></div>
-            <div class="mt-2 text-gray-500"># One command. Five minutes. Never manually resolve a comment again.</div>
+            <div class="mt-2 text-gray-500"># Five minutes. Never manually resolve a comment again.</div>
             <button class="copy-btn bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2.5 py-1.5 rounded-md text-xs transition-all" data-copy="git clone https://github.com/cass-clearly/remarq.git
+cd remarq
 docker compose -f docker-compose.remarq.yml up --build">Copy</button>
           </div>
         </div>

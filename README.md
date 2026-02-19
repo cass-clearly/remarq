@@ -59,7 +59,7 @@ Backend runs on port 3333. Visit **http://localhost:3333** for the demo.
 
 ```bash
 # Get open feedback
-curl http://localhost:3333/comments?status=open&document=DOC_ID
+curl "http://localhost:3333/comments?status=open&document=DOC_ID"
 
 # Your agent gets structured annotations with exact text anchors,
 # threaded replies, and author context. It knows exactly what to fix.
