@@ -6,6 +6,7 @@ import {
   setActiveHighlight,
   scrollToHighlight,
 } from "./highlights.js";
+import { openModal } from "./ui.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -51,7 +52,12 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   _sidebar.innerHTML = `
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
-      <button class="fb-sidebar-toggle" title="Close sidebar">&times;</button>
+      <div class="fb-sidebar-header-actions">
+        <button class="fb-ai-btn" title="Send feedback to Claude">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+        </button>
+        <button class="fb-sidebar-toggle" title="Close sidebar">&times;</button>
+      </div>
     </div>
     <div class="fb-sidebar-content">
       <div class="fb-name-section">
@@ -87,6 +93,10 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   nameInput.addEventListener("input", () => {
     localStorage.setItem(COMMENTER_KEY, nameInput.value.trim());
   });
+
+  // AI button in header
+  const aiBtn = _sidebar.querySelector(".fb-ai-btn");
+  aiBtn.addEventListener("click", () => openModal());
 
   // Close button in header
   const toggleBtn = _sidebar.querySelector(".fb-sidebar-toggle");
@@ -511,6 +521,26 @@ function injectStyles() {
       border-bottom: 1px solid #e0e0e0;
       background: #fff;
       font-size: 15px;
+    }
+    .fb-sidebar-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .fb-ai-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #7c3aed;
+      padding: 4px;
+      line-height: 1;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-ai-btn:hover {
+      background: #f3f0ff;
     }
     .fb-sidebar-toggle {
       background: none;

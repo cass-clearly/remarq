@@ -1,30 +1,11 @@
 /**
- * Author-mode UI: "Send Feedback to Claude" button + modal.
- * Only visible when ?author=true is in the URL.
+ * AI revision UI: "Send Feedback to Claude" modal.
+ * Triggered from the sidebar's AI button.
  */
 
 import { buildPrompt } from "./prompt-builder.js";
 
 const STYLES = `
-  .hf-button {
-    position: fixed;
-    bottom: 24px;
-    left: 24px;
-    z-index: 10000;
-    background: #7c3aed;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 12px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    transition: background 0.2s;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  .hf-button:hover { background: #6d28d9; }
-
   .hf-overlay {
     position: fixed;
     inset: 0;
@@ -135,20 +116,16 @@ let _getComments = null;
 let _config = null;
 
 /**
- * Initialize the author-mode UI.
+ * Initialize the AI revision UI.
  *
  * @param {Object} config
  * @param {Function} getComments - Returns the current comment list
  */
 export function initAuthorUI(config, getComments) {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("author") !== "true") return;
-
   _config = config;
   _getComments = getComments;
 
   injectStyles();
-  createFloatingButton();
 }
 
 function injectStyles() {
@@ -157,15 +134,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-function createFloatingButton() {
-  const btn = document.createElement("button");
-  btn.className = "hf-button";
-  btn.textContent = "Send Feedback to Claude";
-  btn.addEventListener("click", () => openModal());
-  document.body.appendChild(btn);
-}
-
-function openModal() {
+export function openModal() {
   const comments = _getComments();
 
   const overlay = document.createElement("div");

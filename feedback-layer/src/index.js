@@ -117,7 +117,7 @@ function init() {
     // Load existing comments
     loadComments();
 
-    // Author mode
+    // AI revision UI
     initAuthorUI(config, () => _comments);
   };
 

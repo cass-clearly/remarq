@@ -1,6 +1,6 @@
 # Remarq
 
-Lightweight document annotation tool. Reviewers highlight text and leave threaded comments — no accounts needed, just enter a name. Authors collect the feedback and send it to Claude for AI-assisted revision.
+Lightweight document annotation tool. Reviewers highlight text and leave threaded comments — no accounts needed, just enter a name. A built-in sidebar button sends all feedback to Claude for AI-assisted revision.
 
 ## Quick Start
 
@@ -79,9 +79,9 @@ DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 
 If `DATABASE_URL` is not set, it defaults to `postgresql://postgres@localhost/postgres`. The server creates tables automatically on first start. Set the `PORT` environment variable to change the listen port (default 3333).
 
-## Author Mode
+## AI Revision
 
-Append `?author=true` to any annotated page URL to enable author mode. This adds a "Send Feedback to Claude" button that:
+Click the sparkle button in the sidebar header to generate a revision prompt. It:
 
 1. Collects all annotations (with threaded replies)
 2. Formats them into a structured revision prompt alongside the document HTML
@@ -161,7 +161,7 @@ remarq/
 │       ├── highlights.js        # Highlight rendering
 │       ├── sidebar.js           # Sidebar UI
 │       ├── prompt-builder.js    # Annotation → Claude prompt
-│       └── ui.js                # Author mode button/modal
+│       └── ui.js                # AI revision modal
 ├── serve/
 │   ├── index.html               # Demo page
 │   └── feedback-layer.js        # Pre-built bundle (committed)

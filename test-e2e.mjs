@@ -23,7 +23,7 @@ async function run() {
     await testCreateComment();
     await testCommentPersistsOnReload();
     await testDeleteComment();
-    await testAuthorMode();
+    await testAIRevision();
     await testDocumentIdBinding();
     console.log("\n✅ All tests passed!");
   } catch (err) {
@@ -202,8 +202,8 @@ async function testDeleteComment() {
   console.log("OK");
 }
 
-async function testAuthorMode() {
-  process.stdout.write("Test: author mode... ");
+async function testAIRevision() {
+  process.stdout.write("Test: AI revision... ");
 
   // Create a comment first
   await fetch(API + "/comments", {
@@ -219,13 +219,16 @@ async function testAuthorMode() {
 
   const page = await browser.newPage();
   collectErrors(page);
-  await page.goto(BASE + "/index.html?author=true", { waitUntil: "networkidle0" });
+  await page.goto(BASE + "/index.html", { waitUntil: "networkidle0" });
 
-  // Check "Send Feedback to Claude" button exists
-  const btn = await page.$(".hf-button");
-  if (!btn) throw new Error("Author button not found");
+  // Open the sidebar first
+  await page.click(".fb-sidebar-tab");
+  await new Promise((r) => setTimeout(r, 300));
 
-  // Click it
+  // Click the AI button in the sidebar header
+  const btn = await page.$(".fb-ai-btn");
+  if (!btn) throw new Error("AI button not found in sidebar");
+
   await btn.click();
   await page.waitForSelector(".hf-modal", { timeout: 3000 });
 
