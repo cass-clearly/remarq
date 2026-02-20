@@ -186,4 +186,13 @@ docker compose -f docker-compose.remarq.yml up --build
 
 ---
 
+## License
+
+Remarq is dual-licensed:
+
+- **Open Source** — [AGPL-3.0](./LICENSE). Free for individuals, self-hosters, and open source use. If you modify Remarq and make it available over a network, you must release your source code.
+- **Commercial** — A separate commercial license is available for organizations that need to keep their code proprietary. See [COMMERCIAL.md](./COMMERCIAL.md) for details.
+
+---
+
 Built by [cass-clearly](https://github.com/cass-clearly)
