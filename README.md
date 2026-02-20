@@ -95,7 +95,7 @@ Configure via `data-` attributes on the script tag:
 
 ### Docker Compose (recommended)
 
-Create a `.env` file:
+Create a `.env` file next to `docker-compose.remarq.yml` (docker compose reads it automatically):
 
 ```
 POSTGRES_PASSWORD=your-secure-password-here
