@@ -92,6 +92,7 @@ Configure via `data-` attributes on the script tag:
 | `data-api-url` | `""` (same origin) | URL of the Remarq backend |
 | `data-content-selector` | `body` | CSS selector for the annotatable content area |
 | `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
+| `data-theme` | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
 
 ## Production
 
