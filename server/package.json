@@ -1,6 +1,7 @@
 {
   "name": "@csalvato/remarq-server",
   "version": "1.6.0",
+  "license": "AGPL-3.0",
   "description": "Lightweight document annotation server for Remarq",
   "main": "index.js",
   "bin": {
