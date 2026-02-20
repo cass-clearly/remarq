@@ -1,6 +1,8 @@
-# Remarq
+<p align="center">
+  <img src="assets/remarq-wordmark-dark.png" alt="Remarq" width="300">
+</p>
 
-### Google Docs comments are where feedback goes to die. We built the antidote.
+<h3 align="center">Google Docs comments are where feedback goes to die. We built the antidote.</h3>
 
 Remarq is a lightweight document annotation tool for the agent era. Drop a single `<script>` tag into any HTML page — reviewers highlight text and leave threaded comments (no accounts needed). Then your AI agent polls the API, revises the document, and resolves comments automatically.
 
