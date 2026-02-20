@@ -4,6 +4,8 @@ set -e
 
 cd "$(dirname "$0")"
 
+export POSTGRES_PASSWORD=remarq
+
 # Build frontend
 (cd feedback-layer && node build.js && cp dist/feedback-layer.js ../serve/feedback-layer.js)
 echo "Bundle built"
