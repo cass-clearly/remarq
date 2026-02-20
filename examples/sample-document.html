@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sample Document - Hypothesis Feedback Demo</title>
+  <title>Sample Document - Remarq Demo</title>
   <style>
     body {
       max-width: 720px;
@@ -58,9 +58,9 @@
     the content they reference using text selectors.
   </p>
   <p>
-    The Hypothesis project implements this standard as an open-source annotation
-    layer that can be embedded in any web page. Reviewers highlight text, leave
-    comments, and these annotations are stored via a REST API.
+    Remarq implements this as a lightweight annotation layer that can be embedded in
+    any web page. Reviewers highlight text, leave comments, and these annotations
+    are stored via a REST API.
   </p>
 
   <blockquote>
@@ -84,10 +84,10 @@
   <h2>Workflow</h2>
   <p>The proposed workflow has four steps:</p>
   <ol>
-    <li>Author publishes an HTML document with the annotation layer embedded</li>
-    <li>Reviewers highlight text and leave comments using the Hypothesis sidebar</li>
-    <li>Author clicks "Send Feedback to Claude" to collect all annotations</li>
-    <li>The system formats annotations into a prompt and sends them to Claude for revision</li>
+    <li>Author publishes an HTML document with the Remarq script tag embedded</li>
+    <li>Reviewers highlight text and leave comments</li>
+    <li>An AI agent polls <code>GET /comments?status=open</code> to collect feedback</li>
+    <li>The agent revises the document and resolves comments via the API</li>
   </ol>
 
   <h2>Conclusion</h2>
@@ -99,23 +99,17 @@
 </article>
 
 <!--
-  Feedback Layer Configuration
-  ============================
-  - data-api-url: Points to your self-hosted Hypothesis API
-  - data-token: Your Hypothesis API developer token (get one at /account/developer)
-  - data-proxy-url: Optional CORS proxy for direct Claude API calls
-  - data-content-selector: CSS selector for the document content to include in the prompt
+  Remarq Feedback Layer
+  =====================
+  - data-api-url: Points to your Remarq backend (default: same origin)
+  - data-content-selector: CSS selector for the annotatable content area
 
-  Add ?author=true to the URL to show the "Send Feedback to Claude" button.
+  To run: docker compose -f docker-compose.remarq.yml up --build
+  Then open this file via http://localhost:3333
 -->
 <script
-  src="/feedback-layer.js"
-  data-api-url="http://192.168.5.204:5000/api"
-  data-authority="localhost"
-  data-client-id="7066addc-0583-11f1-bf1a-9ba26d379bcc"
-  data-client-secret="07dc8e25bf84263f010988b78b6b0a629e374b8aad7eadab924d290165f50e15"
-  data-username="admin"
-  data-token="6879-dev-382b3a54fbfb6095bb4ffeeb2946a821"
+  src="http://localhost:3333/feedback-layer.js"
+  data-api-url="http://localhost:3333"
   data-content-selector="article"
 ></script>
 
