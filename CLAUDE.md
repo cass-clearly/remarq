@@ -56,9 +56,5 @@ Target 80-90% line coverage. 100% is a waste of time — diminishing returns kic
 
 Both suites use `node:test` + `node:assert/strict` and `c8` for coverage with 80% line threshold.
 
-### `_testExports` pattern
-Client modules export internal pure functions via a `_testExports` named export for unit testing without a DOM:
-```js
-export const _testExports = { threadComments, truncate, timeAgo };
-```
-This keeps the public API clean while allowing tests to reach internal logic.
+### Utility modules
+Pure functions live in `feedback-layer/src/utils/` as individual modules. These are imported by both the source files and the test files directly — no `_testExports` hacks needed. When adding testable logic, extract it to a utility file in this directory.

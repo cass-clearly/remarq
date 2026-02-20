@@ -4,7 +4,7 @@
  */
 
 import { buildPrompt } from "./prompt-builder.js";
-import { escapeHtml } from "./escape-html.js";
+import { escapeHtml } from "./utils/escape-html.js";
 
 const STYLES = `
   .hf-overlay {

@@ -7,7 +7,10 @@ import {
   scrollToHighlight,
 } from "./highlights.js";
 import { openModal } from "./ui.js";
-import { escapeHtml } from "./escape-html.js";
+import { escapeHtml } from "./utils/escape-html.js";
+import { threadComments } from "./utils/thread-comments.js";
+import { truncate } from "./utils/truncate.js";
+import { timeAgo } from "./utils/time-ago.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -179,25 +182,6 @@ export function showCommentForm(quote) {
 
   // Scroll form into view
   _formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-/**
- * Thread flat comments into parent + replies structure.
- */
-function threadComments(comments) {
-  const topLevel = [];
-  const repliesByParent = new Map();
-
-  for (const ann of comments) {
-    if (ann.parent) {
-      if (!repliesByParent.has(ann.parent)) repliesByParent.set(ann.parent, []);
-      repliesByParent.get(ann.parent).push(ann);
-    } else {
-      topLevel.push(ann);
-    }
-  }
-
-  return { topLevel, repliesByParent };
 }
 
 /**
@@ -442,21 +426,6 @@ export function focusCommentCard(commentId) {
     card.classList.add("fb-cmt-active");
     card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
-}
-
-function truncate(str, max) {
-  return str.length > max ? str.slice(0, max) + "..." : str;
-}
-
-function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 function injectStyles() {
@@ -841,5 +810,3 @@ function injectStyles() {
   `;
   document.head.appendChild(style);
 }
-
-export const _testExports = { threadComments, truncate, timeAgo };
