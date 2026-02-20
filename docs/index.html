@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Remarq — Google Docs is where feedback goes to die</title>
   <meta name="description" content="Drop-in document annotations for the agent era. One script tag on any HTML page. Your AI agent polls the API, revises the document, and resolves comments automatically. Self-hosted. No accounts needed.">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/favicon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -39,10 +42,10 @@
 <body class="bg-white text-gray-900 antialiased">
 
   <!-- Sticky Nav -->
-  <nav id="navbar" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300 -translate-y-full">
+  <nav id="navbar" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
     <div class="backdrop-blur-md bg-white/80 border-b border-gray-200/60">
       <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <a href="#" class="text-xl font-bold text-violet-600">Remarq</a>
+        <a href="#" class="flex items-center"><img src="assets/remarq-wordmark-dark.png" alt="Remarq" style="width: 110px"></a>
         <div class="flex items-center gap-4">
           <a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1.5 text-sm font-medium">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -59,15 +62,16 @@
     <!-- Subtle grid overlay -->
     <div class="absolute inset-0 opacity-[0.04]" style="background-image: url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22><rect fill=%22none%22 width=%2260%22 height=%2260%22/><path d=%22M0 60L60 0%22 stroke=%22white%22 stroke-width=%220.5%22/></svg>');"></div>
     <div class="relative max-w-6xl mx-auto px-6 py-24 w-full">
-      <div class="max-w-3xl mx-auto text-center">
+      <div class="max-w-5xl mx-auto text-center">
         <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.1] mb-6">
-          Google Docs is where feedback goes to <span class="highlight-accent text-white">die.</span>
+          Feedback <span class="highlight-accent text-white">dies</span> in Google Docs.<br>
+          <span class="text-violet-400">Remarq</span> closes the loop.
         </h1>
         <p class="text-lg sm:text-xl text-violet-200 mb-4 max-w-2xl mx-auto leading-relaxed">
-          You highlight a sentence. You leave a comment. And then... nothing. It sits there like a passive-aggressive Post-it note that everyone sees and nobody acts on.
+          Drop-in annotations for any HTML page. Your reviewers highlight text and comment. Your AI agent revises the document and resolves feedback automatically. It doesn't just sit there for weeks.
         </p>
         <p class="text-lg text-violet-300/80 mb-10 max-w-2xl mx-auto">
-          <strong class="text-white">There's a better way.</strong>
+          <strong class="text-white">The feedback loop isn't just faster — it's closed.</strong>
         </p>
         <div class="flex flex-wrap justify-center gap-4 mb-14">
           <a href="#setup" class="bg-violet-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-violet-500 transition-colors">Get Started</a>
@@ -519,7 +523,7 @@ docker compose -f docker-compose.remarq.yml up --build">Copy</button>
   <!-- Footer -->
   <footer class="bg-gray-950 text-gray-500 py-8">
     <div class="max-w-6xl mx-auto px-6 text-center text-sm">
-      <p class="font-medium text-gray-400 mb-1">Remarq</p>
+      <img src="assets/remarq-wordmark-white.png" alt="Remarq" class="mx-auto mb-1" style="width: 150px">
       <p>Open source. Self-hosted. Built for agents.</p>
       <p class="mt-2 text-gray-600 italic">"Because your feedback shouldn't die in a comment thread."</p>
       <p class="mt-4"><a href="https://github.com/cass-clearly/remarq" target="_blank" rel="noopener" class="text-violet-400 hover:text-violet-300 transition-colors">Star it on GitHub</a></p>
@@ -530,18 +534,6 @@ docker compose -f docker-compose.remarq.yml up --build">Copy</button>
   <script>
     (function() {
       'use strict';
-
-      // Sticky nav: show after scrolling past hero
-      var navbar = document.getElementById('navbar');
-      window.addEventListener('scroll', function() {
-        if (window.scrollY > 200) {
-          navbar.classList.remove('-translate-y-full');
-          navbar.classList.add('translate-y-0');
-        } else {
-          navbar.classList.add('-translate-y-full');
-          navbar.classList.remove('translate-y-0');
-        }
-      }, { passive: true });
 
       // Smooth scroll for anchor links
       document.querySelectorAll('a[href^="#"]').forEach(function(link) {
