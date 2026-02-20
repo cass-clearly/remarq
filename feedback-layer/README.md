@@ -99,10 +99,11 @@ Remarq requires a backend server to store comments.
 ```bash
 git clone https://github.com/cass-clearly/remarq.git
 cd remarq
+echo "POSTGRES_PASSWORD=remarq" > .env
 docker compose -f docker-compose.remarq.yml up --build
 ```
 
-This starts Postgres and the Remarq server on `http://localhost:3333`. For production, create a `.env` file next to the compose file with `POSTGRES_PASSWORD=your-secure-password` — see the [main README](https://github.com/cass-clearly/remarq#production) for details.
+This starts Postgres and the Remarq server on `http://localhost:3333`. For production, use a strong password in your `.env` file — see the [main README](https://github.com/cass-clearly/remarq#production) for details.
 
 ### API Endpoints
 

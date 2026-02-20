@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: remarq
       POSTGRES_USER: remarq
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-remarq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - remarq-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
     ports:
       - "0.0.0.0:3333:3333"
     environment:
-      DATABASE_URL: postgres://remarq:${POSTGRES_PASSWORD:-remarq}@postgres/remarq
+      DATABASE_URL: postgres://remarq:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres/remarq
       PORT: "3333"
     depends_on:
       postgres:
