@@ -79,3 +79,5 @@ function formatComments(comments) {
     })
     .join("\n\n");
 }
+
+export const _testExports = { formatComments };

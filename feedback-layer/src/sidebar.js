@@ -7,6 +7,7 @@ import {
   scrollToHighlight,
 } from "./highlights.js";
 import { openModal } from "./ui.js";
+import { escapeHtml } from "./escape-html.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -458,12 +459,6 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 function injectStyles() {
   const style = document.createElement("style");
   style.textContent = `
@@ -846,3 +841,5 @@ function injectStyles() {
   `;
   document.head.appendChild(style);
 }
+
+export const _testExports = { threadComments, truncate, timeAgo };

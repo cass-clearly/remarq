@@ -4,6 +4,7 @@
  */
 
 import { buildPrompt } from "./prompt-builder.js";
+import { escapeHtml } from "./escape-html.js";
 
 const STYLES = `
   .hf-overlay {
@@ -208,8 +209,3 @@ export function openModal() {
   footer.appendChild(closeBtn2);
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}

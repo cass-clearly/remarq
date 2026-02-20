@@ -8,7 +8,9 @@
     "start": "node server/index.js",
     "postinstall": "npm install --prefix server",
     "build": "npm install --prefix feedback-layer && node feedback-layer/build.js && cp feedback-layer/dist/feedback-layer.js serve/feedback-layer.js",
-    "test:server": "c8 --check-coverage --lines 80 node --test server/test.mjs"
+    "test:server": "c8 --check-coverage --lines 80 node --test server/test.mjs",
+    "test:client": "c8 --check-coverage --lines 80 --include=feedback-layer/src/escape-html.js --include=feedback-layer/src/prompt-builder.js node --test feedback-layer/test/test.mjs",
+    "test": "npm run test:server && npm run test:client"
   },
   "devDependencies": {
     "c8": "^10.1.3",

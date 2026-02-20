@@ -195,6 +195,17 @@ describe("API", async () => {
       const json = await res.json();
       assert.ok(json.error.message);
     });
+
+    it("returns 400 when uri is invalid", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "not a url" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message);
+    });
   });
 
   describe("GET /documents/:id", () => {
@@ -318,6 +329,28 @@ describe("API", async () => {
       assert.equal(res.status, 201);
       assert.equal(json.parent, parentJson.id);
       assert.equal(json.status, null);
+    });
+
+    it("returns 404 when document ID does not exist", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: "doc_nonexistent", quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 404);
+      const json = await res.json();
+      assert.ok(json.error.message);
+    });
+
+    it("returns 400 when neither uri nor document is provided", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message);
     });
 
     it("returns 400 when body is missing", async () => {
