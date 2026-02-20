@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/remarq-wordmark-dark.png" alt="Remarq" width="300">
+  <img src="docs/assets/remarq-wordmark-dark.png" alt="Remarq" width="300">
 </p>
 
 <h3 align="center">Google Docs comments are where feedback goes to die. We built the antidote.</h3>
