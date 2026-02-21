@@ -225,6 +225,85 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── deferredQueue ────────────────────────────────────────────────────
+
+describe("createDeferredQueue", async () => {
+  const { createDeferredQueue } = await import("../src/utils/deferred-queue.js");
+
+  it("starts empty", () => {
+    const q = createDeferredQueue();
+    assert.equal(q.size(), 0);
+    assert.equal(q.hasPending(), false);
+    assert.deepEqual(q.getAll(), []);
+  });
+
+  it("adds and retrieves items", () => {
+    const q = createDeferredQueue();
+    const comment = { id: "c1", quote: "hello" };
+    const selector = { exact: "hello", prefix: "", suffix: "" };
+    q.add(comment, selector);
+    assert.equal(q.size(), 1);
+    assert.equal(q.hasPending(), true);
+    const items = q.getAll();
+    assert.equal(items.length, 1);
+    assert.equal(items[0].comment.id, "c1");
+    assert.equal(items[0].selector.exact, "hello");
+    assert.equal(items[0].attempts, 0);
+  });
+
+  it("removes items by comment ID", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    q.add({ id: "c2" }, { exact: "b" });
+    assert.equal(q.size(), 2);
+    q.remove("c1");
+    assert.equal(q.size(), 1);
+    assert.equal(q.getAll()[0].comment.id, "c2");
+  });
+
+  it("records attempts and returns true while under limit", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    for (let i = 0; i < 9; i++) {
+      assert.equal(q.recordAttempt("c1"), true);
+    }
+    assert.equal(q.size(), 1);
+  });
+
+  it("returns false and removes item at max attempts", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    for (let i = 0; i < 9; i++) {
+      q.recordAttempt("c1");
+    }
+    // 10th attempt should hit the limit
+    assert.equal(q.recordAttempt("c1"), false);
+    assert.equal(q.size(), 0);
+  });
+
+  it("returns false for non-existent comment", () => {
+    const q = createDeferredQueue();
+    assert.equal(q.recordAttempt("nonexistent"), false);
+  });
+
+  it("clears all items", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    q.add({ id: "c2" }, { exact: "b" });
+    q.clear();
+    assert.equal(q.size(), 0);
+    assert.equal(q.hasPending(), false);
+  });
+
+  it("overwrites duplicate comment IDs", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "old" });
+    q.add({ id: "c1" }, { exact: "new" });
+    assert.equal(q.size(), 1);
+    assert.equal(q.getAll()[0].selector.exact, "new");
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {

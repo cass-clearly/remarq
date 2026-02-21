@@ -34,6 +34,7 @@ import {
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
+import { createDeferredQueue } from "./utils/deferred-queue.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
@@ -43,6 +44,9 @@ let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
 let _anchoredIds = new Set();  // Track successfully anchored comments
 let _commentRanges = new Map();  // Map comment ID to its range for position sorting
+let _deferredQueue = createDeferredQueue();  // Queue for comments that failed to anchor
+let _contentObserver = null;  // MutationObserver for deferred anchoring
+let _retryTimer = null;  // Debounce timer for retry attempts
 
 function init() {
   const scriptTag =
@@ -148,6 +152,8 @@ async function loadComments() {
 async function anchorAll(comments) {
   // Clean slate: remove all existing highlights before re-anchoring
   removeAllHighlights();
+  stopContentObserver();
+  _deferredQueue.clear();
 
   const anchored = new Set();
   _commentRanges.clear();
@@ -156,11 +162,10 @@ async function anchorAll(comments) {
     // Skip replies - they don't have text anchors
     if (ann.parent) continue;
 
+    const selector = { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix };
+
     try {
-      const range = await rangeFromSelector(
-        { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
-        _root
-      );
+      const range = await rangeFromSelector(selector, _root);
 
       if (range && ann.status !== 'closed') {
         highlightRange(range, ann.id);
@@ -170,13 +175,87 @@ async function anchorAll(comments) {
         // Track as anchored even if closed (for reopen functionality)
         anchored.add(ann.id);
         _commentRanges.set(ann.id, range);
+      } else if (!range) {
+        // Text not found — queue for deferred anchoring
+        _deferredQueue.add(ann, selector);
       }
     } catch (e) {
       console.warn(`[feedback-layer] Could not anchor comment ${ann.id}:`, e);
+      _deferredQueue.add(ann, selector);
     }
   }
 
+  // Start observing DOM changes if we have unanchored comments
+  if (_deferredQueue.hasPending()) {
+    console.log(`[feedback-layer] ${_deferredQueue.size()} comment(s) queued for deferred anchoring`);
+    startContentObserver();
+  }
+
   return anchored;
+}
+
+function startContentObserver() {
+  if (_contentObserver) return; // already observing
+
+  _contentObserver = new MutationObserver(() => {
+    clearTimeout(_retryTimer);
+    _retryTimer = setTimeout(retryFailedAnchors, 500);
+  });
+
+  _contentObserver.observe(_root, {
+    childList: true,
+    subtree: true,
+  });
+}
+
+function stopContentObserver() {
+  if (_contentObserver) {
+    _contentObserver.disconnect();
+    _contentObserver = null;
+  }
+  clearTimeout(_retryTimer);
+  _retryTimer = null;
+}
+
+async function retryFailedAnchors() {
+  const items = _deferredQueue.getAll();
+  let anchored = false;
+
+  for (const { comment, selector } of items) {
+    try {
+      const range = await rangeFromSelector(selector, _root);
+      if (range) {
+        _deferredQueue.remove(comment.id);
+
+        if (comment.status !== 'closed') {
+          highlightRange(range, comment.id);
+        }
+        _anchoredIds.add(comment.id);
+        _commentRanges.set(comment.id, range);
+        anchored = true;
+
+        console.log(`[feedback-layer] Deferred anchor succeeded for comment ${comment.id}`);
+      } else {
+        const canRetry = _deferredQueue.recordAttempt(comment.id);
+        if (!canRetry) {
+          console.warn(`[feedback-layer] Gave up anchoring comment ${comment.id} after max attempts`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[feedback-layer] Deferred anchor error for ${comment.id}:`, e);
+      _deferredQueue.recordAttempt(comment.id);
+    }
+  }
+
+  // Re-render sidebar if we anchored new comments
+  if (anchored) {
+    renderComments(_comments, _anchoredIds, _commentRanges);
+  }
+
+  // Stop observing if queue is empty
+  if (!_deferredQueue.hasPending()) {
+    stopContentObserver();
+  }
 }
 
 function setupSelectionListener() {

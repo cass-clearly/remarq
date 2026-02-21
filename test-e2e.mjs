@@ -25,6 +25,10 @@ async function run() {
     await testDeleteComment();
     await testAIRevision();
     await testDocumentIdBinding();
+    await testInteractiveWidgetsLoad();
+    await testAccordionAnchoring();
+    await testTabPanelAnchoring();
+    await testDeferredAnchoring();
     console.log("\n✅ All tests passed!");
   } catch (err) {
     console.error("\n❌ Test failed:", err.message);
@@ -335,6 +339,262 @@ async function testDocumentIdBinding() {
 
   await page.close();
   console.log("OK");
+}
+
+async function testInteractiveWidgetsLoad() {
+  process.stdout.write("Test: interactive widgets page loads... ");
+  const page = await browser.newPage();
+  collectErrors(page);
+  const response = await page.goto(BASE + "/test-interactive.html", { waitUntil: "networkidle0" });
+  if (!response.ok()) throw new Error(`Page load failed: ${response.status()}`);
+
+  // Verify sidebar renders
+  const sidebar = await page.$(".fb-sidebar");
+  if (!sidebar) throw new Error("Sidebar not found on interactive widgets page");
+
+  // Verify all interactive widget sections are present
+  const sectionCount = await page.$$eval("h2", (els) => els.length);
+  if (sectionCount < 8) throw new Error(`Expected at least 8 sections, got ${sectionCount}`);
+
+  await page.close();
+  console.log("OK");
+}
+
+async function testAccordionAnchoring() {
+  process.stdout.write("Test: accordion content anchoring... ");
+
+  // Clean slate
+  await cleanInteractiveDB();
+
+  const page = await browser.newPage();
+  collectErrors(page);
+  await page.goto(BASE + "/test-interactive.html", { waitUntil: "networkidle0" });
+
+  // Enter name
+  await page.type(".fb-name-input", "AccordionTester");
+
+  // Open the first accordion panel and select text inside it
+  const created = await page.evaluate(async () => {
+    // Open accordion panel 1
+    const btn = document.querySelector('[aria-controls="acc-panel-1"]');
+    btn.click();
+    await new Promise(r => setTimeout(r, 100));
+
+    // Find text inside the panel
+    const panel = document.getElementById("acc-panel-1");
+    const textNode = panel.querySelector("p").firstChild;
+    if (!textNode) return { error: "Text node not found in accordion panel" };
+
+    // Select "Text anchoring in web annotations"
+    const target = "Text anchoring in web annotations";
+    const offset = textNode.textContent.indexOf(target);
+    if (offset === -1) return { error: "Target text not found: " + target };
+
+    const range = document.createRange();
+    range.setStart(textNode, offset);
+    range.setEnd(textNode, offset + target.length);
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 100));
+
+    const tooltip = document.querySelector(".fb-annotate-tooltip");
+    if (!tooltip) return { error: "Tooltip not found" };
+
+    tooltip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200));
+
+    const form = document.querySelector(".fb-form-card");
+    if (!form) return { error: "Comment form not found" };
+
+    return { ok: true };
+  });
+
+  if (created.error) throw new Error(created.error);
+
+  await page.type(".fb-form-textarea", "Accordion anchoring test");
+  await page.click(".fb-submit-btn");
+  await page.waitForSelector(".fb-cmt-card", { timeout: 3000 });
+
+  // Verify highlight exists inside the accordion panel
+  const highlightInPanel = await page.evaluate(() => {
+    const panel = document.getElementById("acc-panel-1");
+    return panel.querySelectorAll(".fb-highlight").length;
+  });
+  if (highlightInPanel < 1) throw new Error("No highlight found in accordion panel");
+
+  // Close the accordion and verify the highlight mark still exists in DOM (just hidden)
+  await page.evaluate(() => {
+    document.querySelector('[aria-controls="acc-panel-1"]').click();
+  });
+  await new Promise(r => setTimeout(r, 200));
+
+  const highlightStillExists = await page.evaluate(() => {
+    const panel = document.getElementById("acc-panel-1");
+    return panel.querySelectorAll(".fb-highlight").length;
+  });
+  if (highlightStillExists < 1) throw new Error("Highlight disappeared when accordion collapsed");
+
+  // Clean up
+  await cleanInteractiveDB();
+  await page.close();
+  console.log("OK");
+}
+
+async function testTabPanelAnchoring() {
+  process.stdout.write("Test: tab panel anchoring... ");
+
+  await cleanInteractiveDB();
+
+  const page = await browser.newPage();
+  collectErrors(page);
+  await page.goto(BASE + "/test-interactive.html", { waitUntil: "networkidle0" });
+
+  await page.type(".fb-name-input", "TabTester");
+
+  // Switch to the "Details" tab and annotate text inside it
+  const created = await page.evaluate(async () => {
+    // Click the Details tab
+    const tabBtns = document.querySelectorAll("[role=tab]");
+    tabBtns[1].click(); // Details tab
+    await new Promise(r => setTimeout(r, 100));
+
+    const panel = document.getElementById("tab-details");
+    const textNode = panel.querySelector("p").firstChild;
+    if (!textNode) return { error: "Text node not found in tab panel" };
+
+    const target = "feedback layer fetches all comments";
+    const offset = textNode.textContent.indexOf(target);
+    if (offset === -1) return { error: "Target text not found in Details tab" };
+
+    const range = document.createRange();
+    range.setStart(textNode, offset);
+    range.setEnd(textNode, offset + target.length);
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 100));
+
+    const tooltip = document.querySelector(".fb-annotate-tooltip");
+    if (!tooltip) return { error: "Tooltip not found" };
+
+    tooltip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await new Promise(r => setTimeout(r, 200));
+
+    const form = document.querySelector(".fb-form-card");
+    if (!form) return { error: "Comment form not found" };
+
+    return { ok: true };
+  });
+
+  if (created.error) throw new Error(created.error);
+
+  await page.type(".fb-form-textarea", "Tab panel annotation test");
+  await page.click(".fb-submit-btn");
+  await page.waitForSelector(".fb-cmt-card", { timeout: 3000 });
+
+  // Switch to Overview tab and back — verify highlight still exists
+  await page.evaluate(async () => {
+    const tabBtns = document.querySelectorAll("[role=tab]");
+    tabBtns[0].click(); // Switch to Overview
+    await new Promise(r => setTimeout(r, 100));
+    tabBtns[1].click(); // Switch back to Details
+    await new Promise(r => setTimeout(r, 100));
+  });
+
+  const highlightExists = await page.evaluate(() => {
+    const panel = document.getElementById("tab-details");
+    return panel.querySelectorAll(".fb-highlight").length;
+  });
+  if (highlightExists < 1) throw new Error("Highlight lost after tab switch");
+
+  // Reload and verify comment persists and re-anchors
+  await page.goto(BASE + "/test-interactive.html", { waitUntil: "networkidle0" });
+  await page.waitForSelector(".fb-cmt-card", { timeout: 3000 });
+
+  const highlightsAfterReload = await page.$$eval(".fb-highlight", (els) => els.length);
+  if (highlightsAfterReload < 1) throw new Error("Highlight not re-anchored after reload");
+
+  await cleanInteractiveDB();
+  await page.close();
+  console.log("OK");
+}
+
+async function testDeferredAnchoring() {
+  process.stdout.write("Test: deferred anchoring for dynamic content... ");
+
+  await cleanInteractiveDB();
+
+  // Pre-create a comment targeting text that will only exist after dynamic load
+  const dynamicText = "This content was loaded dynamically after the initial page render.";
+  await fetch(API + "/comments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      uri: "http://localhost:3333/test-interactive.html",
+      quote: dynamicText,
+      prefix: "",
+      suffix: "",
+      body: "Testing deferred anchoring",
+      author: "DeferredTester",
+    }),
+  });
+
+  const page = await browser.newPage();
+  const consoleLogs = [];
+  page.on("console", (msg) => {
+    consoleLogs.push(msg.text());
+    if (msg.type() === "error") console.log("\n  [console.error]", msg.text());
+  });
+  page.on("pageerror", (err) => console.log("\n  [pageerror]", err.message));
+
+  await page.goto(BASE + "/test-interactive.html", { waitUntil: "networkidle0" });
+
+  // Wait for initial anchoring to complete
+  await new Promise(r => setTimeout(r, 500));
+
+  // Comment should be in sidebar (even though not anchored yet)
+  await page.waitForSelector(".fb-cmt-card", { timeout: 3000 });
+
+  // The highlight should NOT exist yet (text not in DOM)
+  const highlightsBeforeLoad = await page.$$eval(".fb-highlight", (els) => els.length);
+  if (highlightsBeforeLoad > 0) throw new Error("Highlight found before dynamic content loaded — should be deferred");
+
+  // Verify the deferred queue log message appeared
+  const hasDeferredLog = consoleLogs.some(log => log.includes("queued for deferred anchoring"));
+  if (!hasDeferredLog) throw new Error("Expected deferred anchoring log message");
+
+  // Now load the dynamic content (triggers MutationObserver)
+  await page.click("#load-dynamic-btn");
+
+  // Wait for MutationObserver debounce (500ms) + anchoring
+  await new Promise(r => setTimeout(r, 1500));
+
+  // The highlight should now exist
+  const highlightsAfterLoad = await page.$$eval(".fb-highlight", (els) => els.length);
+  if (highlightsAfterLoad < 1) throw new Error("Deferred anchoring failed — no highlight after dynamic content loaded");
+
+  // Verify deferred anchor success log
+  const hasSuccessLog = consoleLogs.some(log => log.includes("Deferred anchor succeeded"));
+  if (!hasSuccessLog) throw new Error("Expected deferred anchor success log message");
+
+  await cleanInteractiveDB();
+  await page.close();
+  console.log("OK");
+}
+
+async function cleanInteractiveDB() {
+  const res = await fetch(API + "/comments?uri=" + encodeURIComponent("http://localhost:3333/test-interactive.html"));
+  const json = await res.json();
+  for (const ann of json.data) {
+    await fetch(API + "/comments/" + ann.id, { method: "DELETE" });
+  }
 }
 
 async function cleanDB() {

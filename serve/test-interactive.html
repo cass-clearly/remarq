@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Widgets - Remarq Test</title>
+  <style>
+    body {
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 20px;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.7;
+      color: #333;
+    }
+    h1 { font-size: 2em; margin-bottom: 0.3em; }
+    h2 { font-size: 1.4em; margin-top: 1.8em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+    p { margin: 1em 0; }
+    .meta { color: #666; font-size: 0.9em; font-style: italic; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: bold;
+      font-family: sans-serif;
+      vertical-align: middle;
+    }
+    .badge-pass { background: #d1fae5; color: #065f46; }
+    .badge-deferred { background: #fef3c7; color: #92400e; }
+    .badge-fail { background: #fee2e2; color: #991b1b; }
+
+    /* ── Accordion ──────────────────────────────────────────────── */
+    .accordion-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 12px 16px;
+      background: #f9fafb;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 1em;
+      cursor: pointer;
+      margin-top: 8px;
+      font-family: sans-serif;
+    }
+    .accordion-btn:hover { background: #f3f4f6; }
+    .accordion-btn::before { content: "▸ "; }
+    .accordion-btn[aria-expanded="true"]::before { content: "▾ "; }
+    .accordion-panel {
+      display: none;
+      padding: 12px 16px;
+      border: 1px solid #e5e7eb;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      background: #fff;
+    }
+    .accordion-panel[aria-hidden="false"] { display: block; }
+
+    /* ── Tabs ───────────────────────────────────────────────────── */
+    .tab-list {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 0;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 0.95em;
+      font-family: sans-serif;
+      color: #6b7280;
+    }
+    .tab-btn[aria-selected="true"] {
+      border-bottom-color: #7c3aed;
+      color: #7c3aed;
+      font-weight: 600;
+    }
+    .tab-panel {
+      display: none;
+      padding: 16px 0;
+    }
+    .tab-panel.active { display: block; }
+
+    /* ── Modal ──────────────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 9000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-dialog {
+      background: #fff;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+    .modal-dialog h3 { margin-top: 0; }
+    .modal-close {
+      float: right;
+      background: none;
+      border: none;
+      font-size: 1.5em;
+      cursor: pointer;
+      color: #6b7280;
+    }
+    .open-modal-btn, .load-content-btn {
+      padding: 8px 16px;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-family: sans-serif;
+    }
+    .open-modal-btn:hover, .load-content-btn:hover { background: #6d28d9; }
+
+    /* ── Tooltip ────────────────────────────────────────────────── */
+    .tooltip-trigger {
+      text-decoration: underline dotted;
+      cursor: help;
+      position: relative;
+    }
+    .tooltip-content {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.85em;
+      white-space: nowrap;
+      z-index: 100;
+    }
+    .tooltip-trigger:hover .tooltip-content,
+    .tooltip-trigger:focus .tooltip-content {
+      display: block;
+    }
+
+    /* ── Dropdown ───────────────────────────────────────────────── */
+    .dropdown {
+      position: relative;
+      display: inline-block;
+    }
+    .dropdown-btn {
+      padding: 8px 16px;
+      background: #f9fafb;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: sans-serif;
+    }
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: white;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      min-width: 200px;
+      z-index: 100;
+      padding: 8px 0;
+    }
+    .dropdown-menu.open { display: block; }
+    .dropdown-item {
+      padding: 8px 16px;
+      display: block;
+      color: #333;
+    }
+
+    /* ── Dynamic content ───────────────────────────────────────── */
+    #dynamic-target {
+      min-height: 40px;
+      border: 2px dashed #d1d5db;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 8px;
+    }
+
+    /* ── CSS-hidden ─────────────────────────────────────────────── */
+    .visibility-hidden { visibility: hidden; height: 0; overflow: hidden; }
+    .display-none { display: none; }
+
+    /* ── Compat table ──────────────────────────────────────────── */
+    table.compat {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: sans-serif;
+      font-size: 0.9em;
+      margin: 1em 0;
+    }
+    table.compat th, table.compat td {
+      padding: 8px 12px;
+      border: 1px solid #e5e7eb;
+      text-align: left;
+    }
+    table.compat th { background: #f9fafb; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<article>
+  <h1>Interactive Widgets Test Page</h1>
+  <p class="meta">Test fixture for Remarq annotation anchoring with dynamic content</p>
+
+  <p>
+    This page tests how Remarq handles annotations on content inside interactive
+    widgets. Each section demonstrates a different UI pattern and documents whether
+    annotations anchor correctly.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       1. ACCORDION (CSS visibility toggle — content stays in DOM)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>1. Accordion <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Content inside collapsed accordion panels remains in the DOM but is hidden
+    with <code>display: none</code>. Annotations anchor successfully because
+    the text is present in the DOM at load time.
+  </p>
+
+  <button class="accordion-btn" aria-expanded="false" aria-controls="acc-panel-1"
+    onclick="toggleAccordion(this)">Section A: The Anchoring Problem</button>
+  <div id="acc-panel-1" class="accordion-panel" role="region" aria-hidden="true">
+    <p>
+      Text anchoring in web annotations relies on finding exact text matches
+      in the DOM. When content is hidden with CSS but remains in the document
+      tree, the TextQuoteSelector can still locate and anchor to it. This is
+      the ideal case for interactive widgets.
+    </p>
+  </div>
+
+  <button class="accordion-btn" aria-expanded="false" aria-controls="acc-panel-2"
+    onclick="toggleAccordion(this)">Section B: Context Matters</button>
+  <div id="acc-panel-2" class="accordion-panel" role="region" aria-hidden="true">
+    <p>
+      The prefix and suffix fields in a TextQuoteSelector provide surrounding
+      context that disambiguates between identical text fragments. Even if the
+      same sentence appears in multiple accordion panels, the surrounding
+      context ensures the annotation anchors to the correct instance.
+    </p>
+  </div>
+
+  <button class="accordion-btn" aria-expanded="true" aria-controls="acc-panel-3"
+    onclick="toggleAccordion(this)">Section C: Highlight Visibility</button>
+  <div id="acc-panel-3" class="accordion-panel" role="region" aria-hidden="false">
+    <p>
+      Highlights on text inside a collapsed accordion are invisible until the
+      panel is expanded. The mark elements exist in the DOM, but their parent
+      container is hidden. Once the user opens the panel, highlights appear
+      automatically without re-anchoring.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       2. TABS (content in DOM, toggled with display)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>2. Tab Panels <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Tab panels keep all content in the DOM but toggle visibility. Annotations
+    work because the text exists in the DOM tree regardless of which tab is active.
+  </p>
+
+  <div role="tablist" class="tab-list">
+    <button role="tab" class="tab-btn" aria-selected="true"
+      aria-controls="tab-overview" onclick="switchTab(this, 'tab-overview')">Overview</button>
+    <button role="tab" class="tab-btn" aria-selected="false"
+      aria-controls="tab-details" onclick="switchTab(this, 'tab-details')">Details</button>
+    <button role="tab" class="tab-btn" aria-selected="false"
+      aria-controls="tab-examples" onclick="switchTab(this, 'tab-examples')">Examples</button>
+  </div>
+
+  <div id="tab-overview" role="tabpanel" class="tab-panel active">
+    <p>
+      The overview tab provides a high-level summary of the annotation system.
+      Remarq uses the W3C Web Annotation Data Model to store text selections
+      as TextQuoteSelectors with exact match, prefix, and suffix context.
+    </p>
+  </div>
+
+  <div id="tab-details" role="tabpanel" class="tab-panel">
+    <p>
+      The details tab explains the technical implementation. When the page
+      loads, the feedback layer fetches all comments from the server and
+      attempts to re-anchor each one by finding its quoted text in the DOM.
+      The Apache Annotator library handles the fuzzy matching logic.
+    </p>
+  </div>
+
+  <div id="tab-examples" role="tabpanel" class="tab-panel">
+    <p>
+      The examples tab shows sample annotations in action. Try selecting any
+      text on this page and clicking the Comment button to create a new
+      annotation. Switch between tabs to verify that annotations persist
+      across tab changes.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       3. CSS-HIDDEN CONTENT (visibility: hidden and display: none)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>3. CSS-Hidden Content <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Content hidden with <code>visibility: hidden</code> or <code>display: none</code>
+    remains in the DOM and can be anchored. The text is still part of the
+    document tree — it's just not rendered visually.
+  </p>
+
+  <div class="visibility-hidden" id="hidden-vis">
+    <p>
+      This paragraph is hidden with visibility:hidden. The text is still in
+      the DOM and can be found by TextQuoteSelector. Annotations will anchor
+      to this text even though it is not visible on screen.
+    </p>
+  </div>
+
+  <div class="display-none" id="hidden-display">
+    <p>
+      This paragraph is hidden with display:none. Like visibility:hidden,
+      the DOM nodes still exist. The TextQuoteSelector iterates through text
+      nodes regardless of their computed visibility style.
+    </p>
+  </div>
+
+  <button class="open-modal-btn" onclick="document.getElementById('hidden-vis').classList.toggle('visibility-hidden')">
+    Toggle visibility:hidden
+  </button>
+  <button class="open-modal-btn" onclick="document.getElementById('hidden-display').classList.toggle('display-none')">
+    Toggle display:none
+  </button>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       4. TOOLTIP / POPOVER (CSS hover, content in DOM)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>4. Tooltips <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Tooltips that use CSS <code>:hover</code> to show/hide content keep the
+    tooltip text in the DOM. Annotations can anchor to tooltip text, though
+    the highlight will only be visible when the tooltip is shown.
+  </p>
+  <p>
+    Hover over this
+    <span class="tooltip-trigger" tabindex="0">
+      annotatable term
+      <span class="tooltip-content">This tooltip text can be annotated because it lives in the DOM</span>
+    </span>
+    to see the tooltip. The tooltip content is always present in the DOM tree.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       5. DROPDOWN MENU (toggled with JS, content in DOM)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>5. Dropdown Menu <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Dropdown menus that keep their items in the DOM (but hidden with CSS)
+    allow annotations to anchor. The menu items are in the document tree
+    from page load.
+  </p>
+
+  <div class="dropdown">
+    <button class="dropdown-btn" onclick="toggleDropdown(this)">Menu ▾</button>
+    <div class="dropdown-menu" id="demo-dropdown">
+      <span class="dropdown-item">Annotation anchoring works on dropdown items that live in the DOM</span>
+      <span class="dropdown-item">Each menu item is a text node that the selector can find</span>
+      <span class="dropdown-item">Highlights appear when the dropdown is opened</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       6. MODAL DIALOG (content in DOM but hidden)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>6. Modal Dialog <span class="badge badge-pass">Works</span></h2>
+  <p>
+    Modals with pre-rendered content (DOM nodes exist but are hidden until
+    triggered) work with annotations. The text is present at load time.
+  </p>
+
+  <button class="open-modal-btn" onclick="document.getElementById('demo-modal').classList.add('open')">
+    Open Modal
+  </button>
+
+  <div class="modal-backdrop" id="demo-modal">
+    <div class="modal-dialog">
+      <button class="modal-close" onclick="document.getElementById('demo-modal').classList.remove('open')">&times;</button>
+      <h3>Modal Content</h3>
+      <p>
+        This modal contains annotatable content. Because the modal DOM exists
+        at page load (just hidden with CSS), the TextQuoteSelector can find
+        and anchor to this text immediately. The highlight becomes visible
+        when the modal is opened.
+      </p>
+      <p>
+        Modal dialogs are commonly used for terms of service, help text, and
+        detailed information panels. All of these use cases benefit from the
+        ability to annotate content within the modal.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       7. DYNAMICALLY LOADED CONTENT (injected after page load)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>7. Dynamically Loaded Content <span class="badge badge-deferred">Deferred</span></h2>
+  <p>
+    Content loaded dynamically (via fetch, AJAX, or JS injection) is <strong>not
+    in the DOM at page load</strong>. Initial anchoring will fail, but with
+    deferred anchoring (MutationObserver), the system retries when new content
+    appears in the DOM.
+  </p>
+
+  <button class="load-content-btn" id="load-dynamic-btn" onclick="loadDynamicContent()">
+    Load Dynamic Content
+  </button>
+  <div id="dynamic-target"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       8. LAZY DOM INJECTION (content created by JS, not in initial HTML)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>8. Lazy DOM Injection <span class="badge badge-deferred">Deferred</span></h2>
+  <p>
+    Some frameworks render components lazily — the DOM nodes are created by
+    JavaScript after a trigger (scroll into view, user action, timer). This
+    pattern requires deferred anchoring because the text doesn't exist until
+    the framework renders it.
+  </p>
+
+  <button class="load-content-btn" id="lazy-inject-btn" onclick="lazyInjectContent()">
+    Inject Content
+  </button>
+  <div id="lazy-target"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       9. CONTENT REMOVED FROM DOM (destroyed, not hidden)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>9. Content Removed from DOM <span class="badge badge-fail">Unsupported</span></h2>
+  <p>
+    If content is completely removed from the DOM (not just hidden), annotations
+    cannot re-anchor. This is different from CSS hiding — the text nodes no
+    longer exist. This is an inherent limitation of text-based anchoring.
+  </p>
+  <p>
+    This paragraph can be removed to demonstrate the failure case.
+    Annotations on removed content will appear as unanchored in the sidebar.
+  </p>
+  <button class="load-content-btn" onclick="removeContent()" id="remove-btn">
+    Remove Above Paragraph
+  </button>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       COMPATIBILITY MATRIX
+       ═══════════════════════════════════════════════════════════════════ -->
+  <h2>Compatibility Matrix</h2>
+  <table class="compat">
+    <thead>
+      <tr>
+        <th>Pattern</th>
+        <th>Content in DOM?</th>
+        <th>Anchoring</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Accordion (CSS toggle)</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>Highlight visible when panel expanded</td>
+      </tr>
+      <tr>
+        <td>Tab panels</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>All tabs' content in DOM at once</td>
+      </tr>
+      <tr>
+        <td>CSS hidden (visibility/display)</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>TextQuoteSelector ignores CSS visibility</td>
+      </tr>
+      <tr>
+        <td>Tooltips (CSS :hover)</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>Tooltip text anchors even when hidden</td>
+      </tr>
+      <tr>
+        <td>Dropdown menus (pre-rendered)</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>Menu items present in DOM at load</td>
+      </tr>
+      <tr>
+        <td>Modal dialogs (pre-rendered)</td>
+        <td>Yes</td>
+        <td><span class="badge badge-pass">Immediate</span></td>
+        <td>Modal DOM exists, just hidden</td>
+      </tr>
+      <tr>
+        <td>Dynamically loaded content</td>
+        <td>No (until loaded)</td>
+        <td><span class="badge badge-deferred">Deferred</span></td>
+        <td>MutationObserver retries anchoring</td>
+      </tr>
+      <tr>
+        <td>Lazy DOM injection</td>
+        <td>No (until injected)</td>
+        <td><span class="badge badge-deferred">Deferred</span></td>
+        <td>MutationObserver retries anchoring</td>
+      </tr>
+      <tr>
+        <td>Content removed from DOM</td>
+        <td>No (destroyed)</td>
+        <td><span class="badge badge-fail">Unsupported</span></td>
+        <td>Cannot anchor to non-existent nodes</td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPTS
+     ═══════════════════════════════════════════════════════════════════ -->
+<script>
+  // ── Accordion ──────────────────────────────────────────────────────
+  function toggleAccordion(btn) {
+    const expanded = btn.getAttribute("aria-expanded") === "true";
+    const panel = document.getElementById(btn.getAttribute("aria-controls"));
+    btn.setAttribute("aria-expanded", !expanded);
+    panel.setAttribute("aria-hidden", expanded);
+  }
+
+  // ── Tabs ───────────────────────────────────────────────────────────
+  function switchTab(btn, panelId) {
+    // Deselect all tabs
+    btn.closest("[role=tablist]").querySelectorAll("[role=tab]").forEach(t => {
+      t.setAttribute("aria-selected", "false");
+    });
+    // Hide all panels (siblings)
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    // Activate selected
+    btn.setAttribute("aria-selected", "true");
+    document.getElementById(panelId).classList.add("active");
+  }
+
+  // ── Dropdown ───────────────────────────────────────────────────────
+  function toggleDropdown(btn) {
+    const menu = btn.nextElementSibling;
+    menu.classList.toggle("open");
+  }
+  // Close dropdown when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".dropdown")) {
+      document.querySelectorAll(".dropdown-menu.open").forEach(m => m.classList.remove("open"));
+    }
+  });
+
+  // ── Dynamic content loading ────────────────────────────────────────
+  function loadDynamicContent() {
+    const target = document.getElementById("dynamic-target");
+    target.innerHTML = `
+      <p>
+        This content was loaded dynamically after the initial page render.
+        Annotations targeting this text require deferred anchoring because
+        the TextQuoteSelector could not find it during the initial anchor pass.
+        The MutationObserver detects this insertion and retries anchoring.
+      </p>
+    `;
+    document.getElementById("load-dynamic-btn").disabled = true;
+    document.getElementById("load-dynamic-btn").textContent = "Content Loaded";
+  }
+
+  // ── Lazy DOM injection ─────────────────────────────────────────────
+  function lazyInjectContent() {
+    const target = document.getElementById("lazy-target");
+    const p = document.createElement("p");
+    p.textContent =
+      "This paragraph was injected into the DOM by JavaScript after a user " +
+      "action. It simulates framework-level lazy rendering where components " +
+      "are created on demand. Deferred anchoring handles this case by watching " +
+      "for DOM mutations and retrying failed anchor attempts.";
+    target.appendChild(p);
+    document.getElementById("lazy-inject-btn").disabled = true;
+    document.getElementById("lazy-inject-btn").textContent = "Content Injected";
+  }
+
+  // ── Content removal ────────────────────────────────────────────────
+  function removeContent() {
+    const btn = document.getElementById("remove-btn");
+    const target = btn.previousElementSibling;
+    if (target && target.tagName === "P") {
+      target.remove();
+      btn.disabled = true;
+      btn.textContent = "Paragraph Removed";
+    }
+  }
+</script>
+
+<script
+  src="/feedback-layer.js"
+  data-content-selector="article"
+></script>
+
+</body>
+</html>
