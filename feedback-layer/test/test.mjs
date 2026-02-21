@@ -237,3 +237,154 @@ describe("api", async () => {
     setBaseUrl("");
   });
 });
+
+// ── computeVisibleRange ──────────────────────────────────────────────
+
+describe("computeVisibleRange", async () => {
+  const { computeVisibleRange } = await import("../src/utils/virtual-scroller.js");
+
+  it("returns zeros for empty list", () => {
+    const result = computeVisibleRange({ scrollTop: 0, viewportHeight: 500, itemHeights: [] });
+    assert.deepEqual(result, { startIndex: 0, endIndex: 0, offsetBefore: 0, offsetAfter: 0 });
+  });
+
+  it("shows all items when they fit in viewport", () => {
+    const result = computeVisibleRange({
+      scrollTop: 0,
+      viewportHeight: 500,
+      itemHeights: [100, 100, 100],
+      buffer: 2,
+    });
+    assert.equal(result.startIndex, 0);
+    assert.equal(result.endIndex, 3);
+    assert.equal(result.offsetBefore, 0);
+    assert.equal(result.offsetAfter, 0);
+  });
+
+  it("renders only visible items plus buffer", () => {
+    // 20 items, each 100px. Viewport 300px. Scrolled to 500px.
+    // Items 5,6,7 visible. Buffer=2 → render items 3-9.
+    const heights = Array(20).fill(100);
+    const result = computeVisibleRange({
+      scrollTop: 500,
+      viewportHeight: 300,
+      itemHeights: heights,
+      buffer: 2,
+    });
+    assert.equal(result.startIndex, 3);
+    assert.equal(result.endIndex, 10);
+    assert.equal(result.offsetBefore, 300);
+    assert.equal(result.offsetAfter, 1000);
+  });
+
+  it("clamps buffer to array bounds", () => {
+    const heights = [100, 100, 100];
+    const result = computeVisibleRange({
+      scrollTop: 0,
+      viewportHeight: 100,
+      itemHeights: heights,
+      buffer: 10,
+    });
+    assert.equal(result.startIndex, 0);
+    assert.equal(result.endIndex, 3);
+  });
+
+  it("handles scroll past all items", () => {
+    const heights = [100, 100];
+    const result = computeVisibleRange({
+      scrollTop: 500,
+      viewportHeight: 300,
+      itemHeights: heights,
+      buffer: 1,
+    });
+    // All items above viewport. rawStart=2, buffer → startIndex=1
+    assert.equal(result.startIndex, 1);
+    assert.equal(result.endIndex, 2);
+  });
+
+  it("uses default buffer of 5", () => {
+    const heights = Array(20).fill(100);
+    const result = computeVisibleRange({
+      scrollTop: 1000,
+      viewportHeight: 100,
+      itemHeights: heights,
+    });
+    // Item 10 visible. Default buffer=5.
+    // rawStart=10, rawEnd=11, startIndex=5, endIndex=16
+    assert.equal(result.startIndex, 5);
+    assert.equal(result.endIndex, 16);
+  });
+
+  it("handles variable height items", () => {
+    const heights = [50, 200, 30, 100, 150, 80];
+    // Total: 610. scrollTop=250, viewport=100.
+    // accum: 0→50→250→280→380→530→610
+    // rawStart=2 (accum=250, 250+30=280>250)
+    // top: 250→280→380, 380>=350? yes. rawEnd=4.
+    // buffer=1: startIndex=1, endIndex=5
+    const result = computeVisibleRange({
+      scrollTop: 250,
+      viewportHeight: 100,
+      itemHeights: heights,
+      buffer: 1,
+    });
+    assert.equal(result.startIndex, 1);
+    assert.equal(result.endIndex, 5);
+    assert.equal(result.offsetBefore, 50);   // heights[0]
+    assert.equal(result.offsetAfter, 80);    // heights[5]
+  });
+
+  it("handles scrollTop of 0", () => {
+    const heights = [100, 100, 100, 100, 100];
+    const result = computeVisibleRange({
+      scrollTop: 0,
+      viewportHeight: 200,
+      itemHeights: heights,
+      buffer: 1,
+    });
+    // Items 0,1 visible. buffer=1 → start=0, end=3
+    assert.equal(result.startIndex, 0);
+    assert.equal(result.endIndex, 3);
+    assert.equal(result.offsetBefore, 0);
+    assert.equal(result.offsetAfter, 200);
+  });
+
+  it("handles single item", () => {
+    const result = computeVisibleRange({
+      scrollTop: 0,
+      viewportHeight: 500,
+      itemHeights: [100],
+      buffer: 5,
+    });
+    assert.equal(result.startIndex, 0);
+    assert.equal(result.endIndex, 1);
+    assert.equal(result.offsetBefore, 0);
+    assert.equal(result.offsetAfter, 0);
+  });
+});
+
+// ── scrollOffsetForItem ──────────────────────────────────────────────
+
+describe("scrollOffsetForItem", async () => {
+  const { scrollOffsetForItem } = await import("../src/utils/virtual-scroller.js");
+
+  it("returns 0 for first item", () => {
+    assert.equal(scrollOffsetForItem(0, [100, 200, 300]), 0);
+  });
+
+  it("sums heights before the target item", () => {
+    assert.equal(scrollOffsetForItem(2, [100, 200, 300]), 300);
+  });
+
+  it("handles index beyond array", () => {
+    assert.equal(scrollOffsetForItem(5, [100, 200]), 300);
+  });
+
+  it("returns 0 for empty array", () => {
+    assert.equal(scrollOffsetForItem(0, []), 0);
+  });
+
+  it("handles single item array", () => {
+    assert.equal(scrollOffsetForItem(1, [150]), 150);
+  });
+});

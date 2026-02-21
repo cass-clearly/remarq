@@ -12,9 +12,13 @@ import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
+import { computeVisibleRange, scrollOffsetForItem } from "./utils/virtual-scroller.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
+const ESTIMATED_CARD_HEIGHT = 80;
+const THREAD_GAP = 8;
+const SCROLL_BUFFER = 5;
 
 let _sidebar = null;
 let _listEl = null;
@@ -28,6 +32,18 @@ let _onEdit = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
+
+// Virtual scrolling state
+let _threadData = [];
+let _threadHeights = [];
+let _heightCache = new Map();
+let _scrollEl = null;
+let _topSpacer = null;
+let _bottomSpacer = null;
+let _rafId = null;
+let _lastRange = null;
+let _activeCommentId = null;
+let _listOffsetTop = 0;
 
 export function getCommenter() {
   return localStorage.getItem(COMMENTER_KEY) || "";
@@ -95,6 +111,8 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
 
   _listEl = _sidebar.querySelector(".fb-comment-list");
   _formEl = _sidebar.querySelector(".fb-form-section");
+  _scrollEl = _sidebar.querySelector(".fb-sidebar-content");
+  _scrollEl.addEventListener("scroll", _onScroll);
 
   // Name input
   const nameInput = _sidebar.querySelector(".fb-name-input");
@@ -189,8 +207,9 @@ export function showCommentForm(quote) {
 }
 
 /**
- * Render the full comment list with threaded replies.
- * Only shows comments whose text was successfully found in the document.
+ * Render the comment list with virtual scrolling (windowed rendering).
+ * Only renders threads visible in the viewport plus a small buffer.
+ * Keeps DOM node count constant regardless of total comment count.
  *
  * @param {Array} comments - All comments
  * @param {Set} anchoredIds - Set of comment IDs that successfully anchored to text
@@ -198,8 +217,7 @@ export function showCommentForm(quote) {
  */
 export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map()) {
   _lastComments = comments;
-  _lastAnchoredIds = anchoredIds;  // Store for later use
-  _listEl.innerHTML = "";
+  _lastAnchoredIds = anchoredIds;
 
   const { topLevel, repliesByParent } = threadComments(comments);
 
@@ -207,11 +225,7 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   const sortedTopLevel = topLevel.slice().sort((a, b) => {
     const rangeA = commentRanges.get(a.id);
     const rangeB = commentRanges.get(b.id);
-
-    // If either doesn't have a range, keep original order
     if (!rangeA || !rangeB) return 0;
-
-    // Compare positions using Range.compareBoundaryPoints
     return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
   });
 
@@ -221,8 +235,6 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   const anchoredTopLevel = sortedTopLevel.filter((a) => {
     const hasAnchor = anchoredIds.has(a.id);
     const isClosed = a.status === 'closed';
-
-    // Show if anchored, or if closed and user wants to see closed
     return hasAnchor || (isClosed && _showResolved);
   });
 
@@ -232,6 +244,7 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
     : anchoredTopLevel.filter((a) => a.status !== 'closed');
 
   if (sortedTopLevel.length === 0) {
+    _threadData = [];
     _listEl.innerHTML = `<div class="fb-empty">No comments yet. Select text to add one.</div>`;
     return;
   }
@@ -240,6 +253,7 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   const orphanedCount = sortedTopLevel.filter((a) => !anchoredIds.has(a.id) && a.status !== 'closed').length;
 
   if (visibleTopLevel.length === 0) {
+    _threadData = [];
     if (orphanedCount > 0) {
       _listEl.innerHTML = `<div class="fb-empty">
         ${anchoredTopLevel.length} comment(s) resolved.
@@ -252,29 +266,134 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
     return;
   }
 
-  for (const ann of visibleTopLevel) {
+  // Prepare thread data for virtual scrolling
+  _threadData = visibleTopLevel.map(ann => ({
+    parent: ann,
+    replies: repliesByParent.get(ann.id) || [],
+  }));
+
+  // Compute heights from cache or estimate
+  _threadHeights = _threadData.map(thread => {
+    if (_heightCache.has(thread.parent.id)) {
+      return _heightCache.get(thread.parent.id);
+    }
+    return (1 + thread.replies.length) * ESTIMATED_CARD_HEIGHT + THREAD_GAP;
+  });
+
+  // Set up spacers for virtual scrolling
+  _listEl.innerHTML = "";
+  _topSpacer = document.createElement("div");
+  _topSpacer.className = "fb-vs-spacer";
+  _bottomSpacer = document.createElement("div");
+  _bottomSpacer.className = "fb-vs-spacer";
+  _listEl.appendChild(_topSpacer);
+  _listEl.appendChild(_bottomSpacer);
+
+  // Cache list offset within scroll container
+  _listOffsetTop = _listEl.offsetTop - _scrollEl.offsetTop;
+
+  // Reset range to force initial render
+  _lastRange = null;
+  _renderWindow();
+}
+
+function _onScroll() {
+  if (_rafId) return;
+  _rafId = requestAnimationFrame(() => {
+    _rafId = null;
+    _renderWindow();
+  });
+}
+
+function _renderWindow() {
+  if (_threadData.length === 0 || !_scrollEl) return;
+
+  const scrollTop = Math.max(0, _scrollEl.scrollTop - _listOffsetTop);
+  const viewportHeight = _scrollEl.clientHeight;
+
+  const { startIndex, endIndex, offsetBefore, offsetAfter } = computeVisibleRange({
+    scrollTop,
+    viewportHeight,
+    itemHeights: _threadHeights,
+    buffer: SCROLL_BUFFER,
+  });
+
+  // Skip if same range already rendered
+  if (_lastRange && _lastRange.startIndex === startIndex && _lastRange.endIndex === endIndex) {
+    return;
+  }
+  _lastRange = { startIndex, endIndex };
+
+  // Remove existing thread elements (keep spacers)
+  while (_listEl.children.length > 2) {
+    _listEl.removeChild(_listEl.children[1]);
+  }
+
+  // Set spacer heights
+  _topSpacer.style.height = offsetBefore + "px";
+  _bottomSpacer.style.height = offsetAfter + "px";
+
+  // Build visible threads
+  const fragment = document.createDocumentFragment();
+  for (let i = startIndex; i < endIndex; i++) {
+    const { parent, replies } = _threadData[i];
     const thread = document.createElement("div");
     thread.className = "fb-thread";
+    thread.dataset.threadIndex = i;
 
-    thread.appendChild(buildCard(ann, false));
+    thread.appendChild(buildCard(parent, false));
 
-    // Render replies
-    const replies = repliesByParent.get(ann.id) || [];
     for (const reply of replies) {
       thread.appendChild(buildCard(reply, true));
     }
 
-    // Reply button
     const replyBtn = document.createElement("button");
     replyBtn.className = "fb-reply-btn";
     replyBtn.textContent = "Reply";
     replyBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      showReplyForm(ann.id, thread, replyBtn);
+      showReplyForm(parent.id, thread, replyBtn);
     });
     thread.appendChild(replyBtn);
 
-    _listEl.appendChild(thread);
+    fragment.appendChild(thread);
+  }
+
+  _listEl.insertBefore(fragment, _bottomSpacer);
+
+  // Measure rendered threads and update height cache
+  _measureRenderedThreads();
+}
+
+function _measureRenderedThreads() {
+  const threadEls = _listEl.querySelectorAll(".fb-thread");
+  let heightChanged = false;
+
+  for (const el of threadEls) {
+    const index = parseInt(el.dataset.threadIndex, 10);
+    const thread = _threadData[index];
+    if (!thread) continue;
+
+    const measured = el.offsetHeight + THREAD_GAP;
+    if (_heightCache.get(thread.parent.id) !== measured) {
+      _heightCache.set(thread.parent.id, measured);
+      _threadHeights[index] = measured;
+      heightChanged = true;
+    }
+  }
+
+  // Recalculate spacer heights if measurements changed
+  if (heightChanged && _lastRange) {
+    let newOffsetBefore = 0;
+    for (let i = 0; i < _lastRange.startIndex; i++) {
+      newOffsetBefore += _threadHeights[i];
+    }
+    let newOffsetAfter = 0;
+    for (let i = _lastRange.endIndex; i < _threadHeights.length; i++) {
+      newOffsetAfter += _threadHeights[i];
+    }
+    _topSpacer.style.height = newOffsetBefore + "px";
+    _bottomSpacer.style.height = newOffsetAfter + "px";
   }
 }
 
@@ -285,6 +404,10 @@ function buildCard(ann, isReply) {
     + (isClosed ? " fb-cmt-closed" : "")
     + (isReply ? " fb-cmt-reply" : "");
   card.dataset.id = ann.id;
+
+  if (_activeCommentId === ann.id) {
+    card.classList.add("fb-cmt-active");
+  }
 
   card.innerHTML = `
     <div class="fb-cmt-body">${escapeHtml(ann.body)}</div>
@@ -302,6 +425,7 @@ function buildCard(ann, isReply) {
       if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
+      _activeCommentId = ann.id;
       _listEl
         .querySelectorAll(".fb-cmt-card")
         .forEach((c) => c.classList.remove("fb-cmt-active"));
@@ -418,11 +542,27 @@ function showEditForm(ann, card) {
 
 /**
  * Scroll the sidebar to a specific comment card and highlight it.
+ * With virtual scrolling, ensures the target thread is rendered first.
  */
 export function focusCommentCard(commentId) {
-  const card = _listEl.querySelector(
-    `.fb-cmt-card[data-id="${commentId}"]`
+  // Find thread containing this comment (could be parent or reply)
+  const threadIndex = _threadData.findIndex(t =>
+    t.parent.id === commentId || t.replies.some(r => r.id === commentId)
   );
+
+  if (threadIndex !== -1) {
+    // Scroll to position the thread in view
+    const offset = scrollOffsetForItem(threadIndex, _threadHeights);
+    _scrollEl.scrollTop = offset + _listOffsetTop;
+
+    // Force render so the thread is in the DOM
+    _lastRange = null;
+    _renderWindow();
+  }
+
+  // Highlight the card
+  _activeCommentId = commentId;
+  const card = _listEl.querySelector(`.fb-cmt-card[data-id="${commentId}"]`);
   if (card) {
     _listEl
       .querySelectorAll(".fb-cmt-card")
@@ -552,7 +692,9 @@ function injectStyles() {
     .fb-comment-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+    }
+    .fb-vs-spacer {
+      flex-shrink: 0;
     }
     .fb-empty {
       color: #999;
@@ -663,6 +805,7 @@ function injectStyles() {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      margin-bottom: 8px;
     }
     .fb-cmt-reply {
       margin-left: 20px;
