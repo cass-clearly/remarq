@@ -432,6 +432,7 @@ async function handleDelete(commentId) {
     await deleteComment(commentId);
     removeHighlights(commentId);
     _anchoredIds.delete(commentId);
+    _deferredQueue.remove(commentId);
     _comments = _comments.filter(
       (a) => a.id !== commentId && a.parent !== commentId
     );
