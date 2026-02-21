@@ -713,6 +713,106 @@ describe("API", async () => {
     });
   });
 
+  describe("GET /comments search and author filters", () => {
+    async function seedSearchData() {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/search-test" }),
+      });
+      const docId = (await docRes.json()).id;
+      const comments = [
+        { document: docId, quote: "alpha quote", body: "First comment about dogs", author: "Alice" },
+        { document: docId, quote: "beta quote", body: "Second comment about cats", author: "Bob" },
+        { document: docId, quote: "gamma quote with dogs", body: "Third comment", author: "Alice" },
+      ];
+      for (const c of comments) {
+        await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(c),
+        });
+      }
+      return docId;
+    }
+
+    it("search matches keyword in body", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=dogs`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 2);
+    });
+
+    it("search matches keyword in quote", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=beta`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].quote.includes("beta"));
+    });
+
+    it("search is case-insensitive", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=DOGS`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 2);
+    });
+
+    it("search returns empty when no matches", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=nonexistent`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 0);
+    });
+
+    it("author filters by exact name", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&author=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 2);
+      assert.ok(json.data.every((c) => c.author === "Alice"));
+    });
+
+    it("author returns empty when no matches", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&author=Zara`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 0);
+    });
+
+    it("search + author combined with AND logic", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=cats&author=Bob`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].author, "Bob");
+      assert.ok(json.data[0].body.includes("cats"));
+    });
+
+    it("search + status combined", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=dogs&status=open`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.ok(json.data.length >= 1);
+    });
+
+    it("empty search param returns all comments", async () => {
+      const docId = await seedSearchData();
+      const res = await fetch(`${BASE}/comments?document=${docId}&search=`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 3);
+    });
+  });
+
   describe("GET /comments/:id", () => {
     it("retrieves a comment", async () => {
       const create = await fetch(`${BASE}/comments`, {

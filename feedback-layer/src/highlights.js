@@ -335,6 +335,26 @@ export function scrollToHighlight(commentId) {
 }
 
 /**
+ * Dim highlights for comments not in the visible set.
+ * Pass null to restore all highlights to normal opacity.
+ */
+export function dimHighlights(visibleIds) {
+  document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
+    const id = el.dataset.commentId;
+    const dimmed = visibleIds != null && !visibleIds.has(id);
+    const opacity = dimmed ? 0.1 : 0.35;
+
+    if (el.tagName === 'g' || el instanceof SVGElement) {
+      const rects = el.querySelectorAll('rect');
+      rects.forEach((rect) => rect.setAttribute('fill-opacity', String(opacity)));
+    } else {
+      const hex = _commentColors.get(id) || DEFAULT_COLOR;
+      el.style.backgroundColor = hexToRgba(hex, opacity);
+    }
+  });
+}
+
+/**
  * Hide or show highlights for a closed/open comment.
  */
 export function setHighlightResolved(commentId, resolved) {

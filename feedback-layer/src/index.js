@@ -23,6 +23,7 @@ import {
   removeAllHighlights,
   setHighlightClickHandler,
   setActiveHighlight,
+  dimHighlights,
 } from "./highlights.js";
 import {
   createSidebar,
@@ -31,6 +32,7 @@ import {
   focusCommentCard,
   openSidebar,
   getCommenter,
+  updateAuthorFilter,
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
@@ -105,6 +107,7 @@ function init() {
         onResolve: handleResolve,
         onReply: handleReply,
         onEdit: handleEdit,
+        onSearch: handleSearch,
         defaultColor: _defaultColor,
       });
 
@@ -143,6 +146,7 @@ async function loadComments() {
     _comments = await fetchComments(_docUri, _docId);
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
+    updateAuthorFilter(_comments);
     renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
@@ -353,6 +357,25 @@ async function handleEdit(commentId, comment) {
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
+  }
+}
+
+async function handleSearch({ search, author }) {
+  try {
+    const hasFilters = search || author;
+    const filtered = await fetchComments(_docUri, _docId, { search, author });
+
+    if (hasFilters) {
+      const filteredIds = new Set(filtered.map((c) => c.id));
+      dimHighlights(filteredIds);
+    } else {
+      dimHighlights(null);
+    }
+
+    renderComments(filtered, _anchoredIds, _commentRanges);
+  } catch (err) {
+    console.error("[feedback-layer] Failed to search comments:", err);
+    showToast(`Failed to search comments: ${err.message}`, "error");
   }
 }
 

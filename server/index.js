@@ -139,7 +139,7 @@ app.delete("/documents/:id", asyncHandler(async (req, res) => {
 // ── Comment endpoints ───────────────────────────────────────────────
 
 app.get("/comments", asyncHandler(async (req, res) => {
-  const { document: docId, uri, status, expand } = req.query;
+  const { document: docId, uri, status, expand, search, author } = req.query;
 
   if (status !== undefined && status !== "open" && status !== "closed") {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
@@ -157,35 +157,41 @@ app.get("/comments", asyncHandler(async (req, res) => {
     resolvedDocId = docResult.rows[0].id;
   }
 
-  let rows;
+  // Build dynamic WHERE clauses and parameter list
+  const conditions = [];
+  const params = [];
+  let paramIdx = 1;
+
   if (resolvedDocId) {
-    if (status) {
-      ({ rows } = await pool.query(
-        `SELECT * FROM comments WHERE document = $1
-          AND ((parent IS NULL AND status = $2)
-            OR (parent IN (SELECT id FROM comments WHERE document = $1 AND parent IS NULL AND status = $2)))
-          ORDER BY created_at ASC`,
-        [resolvedDocId, status]
-      ));
-    } else {
-      ({ rows } = await pool.query(
-        "SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC",
-        [resolvedDocId]
-      ));
-    }
-  } else {
-    if (status) {
-      ({ rows } = await pool.query(
-        `SELECT * FROM comments
-          WHERE (parent IS NULL AND status = $1)
-            OR (parent IN (SELECT id FROM comments WHERE parent IS NULL AND status = $1))
-          ORDER BY created_at ASC`,
-        [status]
-      ));
-    } else {
-      ({ rows } = await pool.query("SELECT * FROM comments ORDER BY created_at ASC"));
-    }
+    conditions.push(`document = $${paramIdx++}`);
+    params.push(resolvedDocId);
   }
+
+  if (search) {
+    conditions.push(`(body ILIKE $${paramIdx} OR quote ILIKE $${paramIdx})`);
+    params.push(`%${search}%`);
+    paramIdx++;
+  }
+
+  if (author) {
+    conditions.push(`author = $${paramIdx++}`);
+    params.push(author);
+  }
+
+  if (status) {
+    const statusParam = `$${paramIdx++}`;
+    params.push(status);
+    const docFilter = resolvedDocId ? `document = $1 AND ` : "";
+    conditions.push(
+      `((parent IS NULL AND status = ${statusParam})` +
+      ` OR (parent IN (SELECT id FROM comments WHERE ${docFilter}parent IS NULL AND status = ${statusParam})))`
+    );
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `SELECT * FROM comments ${where} ORDER BY created_at ASC`;
+  let rows;
+  ({ rows } = await pool.query(sql, params));
 
   let data = rows.map(formatComment);
 

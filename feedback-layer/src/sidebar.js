@@ -13,6 +13,7 @@ import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
 import { COLOR_PRESETS, DEFAULT_COLOR } from "./utils/color.js";
+import { debounce } from "./utils/debounce.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -26,6 +27,7 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onSearch = null;
 let _defaultColor = null;
 let _showResolved = false;
 let _lastComments = [];
@@ -45,12 +47,13 @@ export function getCommenter() {
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, defaultColor }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onSearch, defaultColor }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onSearch = onSearch || null;
   _defaultColor = defaultColor || null;
 
   injectStyles();
@@ -72,6 +75,12 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
         <label class="fb-label">Your name</label>
         <input type="text" class="fb-name-input" placeholder="Enter your name..."
                value="${escapeHtml(getCommenter())}">
+      </div>
+      <div class="fb-search-section">
+        <input type="text" class="fb-search-input" placeholder="Search comments...">
+        <select class="fb-author-filter">
+          <option value="">All authors</option>
+        </select>
       </div>
       <div class="fb-filter-section">
         <label class="fb-filter-toggle">
@@ -119,6 +128,22 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+
+  // Search input (debounced)
+  const searchInput = _sidebar.querySelector(".fb-search-input");
+  const authorSelect = _sidebar.querySelector(".fb-author-filter");
+
+  const fireSearch = debounce(() => {
+    if (_onSearch) {
+      _onSearch({
+        search: searchInput.value.trim(),
+        author: authorSelect.value,
+      });
+    }
+  }, 300);
+
+  searchInput.addEventListener("input", fireSearch);
+  authorSelect.addEventListener("change", fireSearch);
 }
 
 export function openSidebar() {
@@ -442,6 +467,19 @@ function showEditForm(ann, card) {
 }
 
 /**
+ * Populate the author filter dropdown with unique author names.
+ */
+export function updateAuthorFilter(comments) {
+  const select = _sidebar && _sidebar.querySelector(".fb-author-filter");
+  if (!select) return;
+  const current = select.value;
+  const authors = [...new Set(comments.map((c) => c.author).filter(Boolean))].sort();
+  select.innerHTML = `<option value="">All authors</option>` +
+    authors.map((a) => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
+  if (authors.includes(current)) select.value = current;
+}
+
+/**
  * Scroll the sidebar to a specific comment card and highlight it.
  */
 export function focusCommentCard(commentId) {
@@ -669,6 +707,39 @@ function injectStyles() {
     }
     .fb-cmt-closed .fb-cmt-resolve {
       color: #16a34a;
+    }
+    .fb-search-section {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .fb-search-input {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .fb-search-input:focus {
+      outline: none;
+      border-color: #7c3aed;
+      box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
+    }
+    .fb-author-filter {
+      width: 110px;
+      padding: 6px 4px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .fb-author-filter:focus {
+      outline: none;
+      border-color: #7c3aed;
     }
     .fb-filter-section {
       margin-bottom: 12px;

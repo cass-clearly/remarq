@@ -21,11 +21,13 @@ async function throwIfNotOk(res, fallbackMessage) {
   throw new Error(err.error?.message || `${fallbackMessage}: ${res.status}`);
 }
 
-export async function fetchComments(uri, documentId) {
-  const query = documentId
-    ? `document=${encodeURIComponent(documentId)}`
-    : `uri=${encodeURIComponent(uri)}`;
-  const res = await fetch(`${_baseUrl}/comments?${query}`);
+export async function fetchComments(uri, documentId, { search, author } = {}) {
+  const params = new URLSearchParams();
+  if (documentId) params.set("document", documentId);
+  else if (uri) params.set("uri", uri);
+  if (search) params.set("search", search);
+  if (author) params.set("author", author);
+  const res = await fetch(`${_baseUrl}/comments?${params}`);
   await throwIfNotOk(res, "Failed to fetch comments");
   const json = await res.json();
   return json.data;
