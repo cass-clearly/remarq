@@ -237,3 +237,94 @@ describe("api", async () => {
     setBaseUrl("");
   });
 });
+
+// ── deferredQueue ────────────────────────────────────────────────────
+
+describe("createDeferredQueue", async () => {
+  const { createDeferredQueue } = await import("../src/utils/deferred-queue.js");
+
+  it("starts empty", () => {
+    const q = createDeferredQueue();
+    assert.equal(q.hasPending(), false);
+    assert.equal(q.size(), 0);
+    assert.deepEqual(q.getAll(), []);
+  });
+
+  it("add() queues a comment with its selector", () => {
+    const q = createDeferredQueue();
+    const comment = { id: "c1", quote: "hello" };
+    const selector = { exact: "hello", prefix: "", suffix: "" };
+    q.add(comment, selector);
+    assert.equal(q.size(), 1);
+    assert.equal(q.hasPending(), true);
+    assert.equal(q.getAll()[0].comment.id, "c1");
+    assert.equal(q.getAll()[0].selector.exact, "hello");
+    assert.equal(q.getAll()[0].attempts, 0);
+  });
+
+  it("remove() removes a comment by ID", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    q.add({ id: "c2" }, { exact: "b" });
+    q.remove("c1");
+    assert.equal(q.size(), 1);
+    assert.equal(q.getAll()[0].comment.id, "c2");
+  });
+
+  it("remove() is a no-op for unknown IDs", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    q.remove("unknown");
+    assert.equal(q.size(), 1);
+  });
+
+  it("recordAttempt() increments attempts and returns true", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    assert.equal(q.recordAttempt("c1"), true);
+    assert.equal(q.getAll()[0].attempts, 1);
+  });
+
+  it("recordAttempt() removes item and returns false after max attempts", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    // Exhaust all 10 attempts
+    for (let i = 0; i < 9; i++) {
+      assert.equal(q.recordAttempt("c1"), true);
+    }
+    // 10th attempt should remove it
+    assert.equal(q.recordAttempt("c1"), false);
+    assert.equal(q.size(), 0);
+  });
+
+  it("recordAttempt() returns false for unknown IDs", () => {
+    const q = createDeferredQueue();
+    assert.equal(q.recordAttempt("unknown"), false);
+  });
+
+  it("clear() removes all items", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    q.add({ id: "c2" }, { exact: "b" });
+    q.clear();
+    assert.equal(q.size(), 0);
+    assert.equal(q.hasPending(), false);
+  });
+
+  it("getAll() returns a copy, not the internal array", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "a" });
+    const all = q.getAll();
+    all.pop();
+    assert.equal(q.size(), 1);
+  });
+
+  it("add() overwrites duplicate comment IDs", () => {
+    const q = createDeferredQueue();
+    q.add({ id: "c1" }, { exact: "first" });
+    q.add({ id: "c1" }, { exact: "second" });
+    assert.equal(q.size(), 1);
+    assert.equal(q.getAll()[0].selector.exact, "second");
+    assert.equal(q.getAll()[0].attempts, 0);
+  });
+});
