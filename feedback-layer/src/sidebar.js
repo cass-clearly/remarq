@@ -801,6 +801,17 @@ function injectStyles() {
     .fb-annotate-tooltip:hover::after {
       border-top-color: #6d28d9;
     }
+    @media (pointer: coarse) {
+      .fb-annotate-tooltip {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 15px;
+      }
+      .fb-annotate-tooltip svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
     @keyframes fb-tooltip-appear {
       from {
         opacity: 0;

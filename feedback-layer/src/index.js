@@ -182,6 +182,7 @@ async function anchorAll(comments) {
 function setupSelectionListener() {
   document.addEventListener("mouseup", onSelectionChange);
   document.addEventListener("keyup", onSelectionChange);
+  document.addEventListener("touchend", onSelectionChange);
 }
 
 function onSelectionChange() {
@@ -221,7 +222,7 @@ function showTooltip(range) {
   _tooltip.style.left =
     window.scrollX + rect.left + rect.width / 2 - 40 + "px";
 
-  _tooltip.addEventListener("mousedown", async (e) => {
+  const handleTooltipActivate = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -237,7 +238,10 @@ function showTooltip(range) {
     }
 
     removeTooltip();
-  });
+  };
+
+  _tooltip.addEventListener("mousedown", handleTooltipActivate);
+  _tooltip.addEventListener("touchstart", handleTooltipActivate);
 
   document.body.appendChild(_tooltip);
 }
