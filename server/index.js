@@ -9,6 +9,7 @@ const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
 const { createAdminRouter } = require("./routes/admin.js");
+const { createTemplateRouter } = require("./routes/templates.js");
 const { createTenantMiddleware } = require("./middleware/tenant.js");
 const path = require("path");
 
@@ -61,6 +62,9 @@ async function initSchema() {
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
 
+  // Track when comments are closed (for analytics)
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS moderation_log (
       id              SERIAL PRIMARY KEY,
@@ -71,6 +75,18 @@ async function initSchema() {
       comment_body    TEXT,
       comment_author  TEXT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS templates (
+      id         TEXT PRIMARY KEY,
+      object     TEXT NOT NULL DEFAULT 'template',
+      name       TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      author     TEXT NOT NULL,
+      shared     BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
@@ -405,7 +421,8 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
     await pool.query("UPDATE comments SET body = $1 WHERE id = $2", [sanitize(body), req.params.id]);
   }
   if (status !== undefined) {
-    await pool.query("UPDATE comments SET status = $1 WHERE id = $2", [status, req.params.id]);
+    const closedAt = status === "closed" ? new Date().toISOString() : null;
+    await pool.query("UPDATE comments SET status = $1, closed_at = $2 WHERE id = $3", [status, closedAt, req.params.id]);
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
@@ -426,6 +443,66 @@ app.delete("/comments/:id", asyncHandler(async (req, res) => {
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   res.json(formatComment(rows[0]));
 }));
+
+// ── Analytics endpoint ───────────────────────────────────────────────
+
+app.get("/documents/:id/analytics", asyncHandler(async (req, res) => {
+  // Verify document exists and belongs to this tenant
+  const checkSql = req.apiKey
+    ? "SELECT id FROM documents WHERE id = $1 AND api_key = $2"
+    : "SELECT id FROM documents WHERE id = $1 AND api_key IS NULL";
+  const checkParams = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows: check } = await pool.query(checkSql, checkParams);
+  if (check.length === 0) return res.status(404).json(errorResponse("Document not found"));
+
+  const docId = req.params.id;
+
+  // Activity over time: comments per day (top-level only)
+  const { rows: activity } = await pool.query(
+    `SELECT DATE(created_at) as date, COUNT(*)::int as count
+     FROM comments WHERE document = $1 AND parent IS NULL
+     GROUP BY DATE(created_at) ORDER BY date`,
+    [docId]
+  );
+
+  // Resolution rate
+  const { rows: [resolution] } = await pool.query(
+    `SELECT COUNT(*)::int as total,
+            COUNT(CASE WHEN status = 'closed' THEN 1 END)::int as resolved
+     FROM comments WHERE document = $1 AND parent IS NULL`,
+    [docId]
+  );
+  const resolutionRate = {
+    total: resolution.total,
+    resolved: resolution.resolved,
+    percentage: resolution.total > 0
+      ? Math.round((resolution.resolved / resolution.total) * 100)
+      : 0,
+  };
+
+  // Average time to resolve (seconds)
+  const { rows: [avgRow] } = await pool.query(
+    `SELECT AVG(EXTRACT(EPOCH FROM (closed_at - created_at)))::float as avg_seconds
+     FROM comments WHERE document = $1 AND parent IS NULL AND status = 'closed' AND closed_at IS NOT NULL`,
+    [docId]
+  );
+  const avgTimeToResolve = avgRow.avg_seconds !== null
+    ? Math.round(avgRow.avg_seconds)
+    : null;
+
+  res.json({
+    activityOverTime: activity.map(r => ({
+      date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : r.date,
+      count: r.count,
+    })),
+    resolutionRate,
+    avgTimeToResolve,
+  });
+}));
+
+// ── Template endpoints ───────────────────────────────────────────────
+
+app.use("/templates", createTemplateRouter(pool));
 
 // ── Admin dashboard (not tenant-scoped — server operator sees all) ──
 

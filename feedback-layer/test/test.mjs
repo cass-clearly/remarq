@@ -272,3 +272,49 @@ describe("api", async () => {
     setBaseUrl("");
   });
 });
+
+// ── validateTemplate ──────────────────────────────────────────────────
+
+describe("validateTemplate", async () => {
+  const { validateTemplate } = await import("../src/utils/validate-template.js");
+
+  it("returns no errors for valid input", () => {
+    const errors = validateTemplate({ name: "LGTM", body: "Looks good!", author: "alice" });
+    assert.deepEqual(errors, []);
+  });
+
+  it("requires name", () => {
+    const errors = validateTemplate({ name: "", body: "body", author: "alice" });
+    assert.ok(errors.includes("name is required"));
+  });
+
+  it("requires body", () => {
+    const errors = validateTemplate({ name: "test", body: "", author: "alice" });
+    assert.ok(errors.includes("body is required"));
+  });
+
+  it("requires author", () => {
+    const errors = validateTemplate({ name: "test", body: "body", author: "" });
+    assert.ok(errors.includes("author is required"));
+  });
+
+  it("rejects name over 100 chars", () => {
+    const errors = validateTemplate({ name: "x".repeat(101), body: "body", author: "alice" });
+    assert.ok(errors.includes("name must be 100 characters or fewer"));
+  });
+
+  it("rejects body over 2000 chars", () => {
+    const errors = validateTemplate({ name: "test", body: "x".repeat(2001), author: "alice" });
+    assert.ok(errors.includes("body must be 2000 characters or fewer"));
+  });
+
+  it("reports multiple errors at once", () => {
+    const errors = validateTemplate({ name: "", body: "", author: "" });
+    assert.equal(errors.length, 3);
+  });
+
+  it("handles missing fields", () => {
+    const errors = validateTemplate({});
+    assert.equal(errors.length, 3);
+  });
+});

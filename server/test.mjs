@@ -1323,6 +1323,153 @@ describe("API", async () => {
       assert.ok(css.includes(".admin-nav"));
     });
   });
+
+  // ── Templates ─────────────────────────────────────────────────────
+
+  describe("Templates CRUD", () => {
+    beforeEach(async () => {
+      await pool.query("DELETE FROM templates");
+    });
+
+    it("GET /templates requires author query param", async () => {
+      const res = await fetch(`${BASE}/templates`);
+      assert.equal(res.status, 400);
+    });
+
+    it("GET /templates returns empty list", async () => {
+      const res = await fetch(`${BASE}/templates?author=alice`);
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.object, "list");
+      assert.equal(json.data.length, 0);
+    });
+
+    it("POST /templates creates a template", async () => {
+      const res = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "LGTM", body: "Looks good to me!", author: "alice" }),
+      });
+      assert.equal(res.status, 201);
+      const json = await res.json();
+      assert.equal(json.object, "template");
+      assert.equal(json.name, "LGTM");
+      assert.equal(json.body, "Looks good to me!");
+      assert.equal(json.author, "alice");
+      assert.equal(json.shared, false);
+      assert.ok(json.id.startsWith("tpl_"));
+    });
+
+    it("POST /templates validates required fields", async () => {
+      const res = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "" }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("GET /templates returns own and shared templates", async () => {
+      // Alice creates a private template
+      await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Alice Private", body: "my template", author: "alice" }),
+      });
+      // Bob creates a shared template
+      await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Bob Shared", body: "shared template", author: "bob", shared: true }),
+      });
+      // Bob creates a private template
+      await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Bob Private", body: "private", author: "bob" }),
+      });
+
+      // Alice should see her own + Bob's shared, but not Bob's private
+      const res = await fetch(`${BASE}/templates?author=alice`);
+      const json = await res.json();
+      assert.equal(json.data.length, 2);
+      const names = json.data.map(t => t.name);
+      assert.ok(names.includes("Alice Private"));
+      assert.ok(names.includes("Bob Shared"));
+    });
+
+    it("PATCH /templates/:id updates a template", async () => {
+      const create = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Draft", body: "old body", author: "alice" }),
+      });
+      const tpl = await create.json();
+
+      const res = await fetch(`${BASE}/templates/${tpl.id}?author=alice`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Final", body: "new body" }),
+      });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.name, "Final");
+      assert.equal(json.body, "new body");
+    });
+
+    it("PATCH /templates/:id rejects other authors", async () => {
+      const create = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Mine", body: "body", author: "alice" }),
+      });
+      const tpl = await create.json();
+
+      const res = await fetch(`${BASE}/templates/${tpl.id}?author=bob`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Stolen" }),
+      });
+      assert.equal(res.status, 403);
+    });
+
+    it("DELETE /templates/:id deletes a template", async () => {
+      const create = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "ToDelete", body: "body", author: "alice" }),
+      });
+      const tpl = await create.json();
+
+      const res = await fetch(`${BASE}/templates/${tpl.id}?author=alice`, { method: "DELETE" });
+      assert.equal(res.status, 200);
+
+      // Verify it's gone
+      const list = await fetch(`${BASE}/templates?author=alice`);
+      const json = await list.json();
+      assert.equal(json.data.length, 0);
+    });
+
+    it("DELETE /templates/:id rejects other authors", async () => {
+      const create = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Mine", body: "body", author: "alice" }),
+      });
+      const tpl = await create.json();
+
+      const res = await fetch(`${BASE}/templates/${tpl.id}?author=bob`, { method: "DELETE" });
+      assert.equal(res.status, 403);
+    });
+
+    it("returns 404 for nonexistent template", async () => {
+      const res = await fetch(`${BASE}/templates/tpl_nonexistent?author=alice`, { method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "x" }),
+      });
+      assert.equal(res.status, 404);
+    });
+  });
 });
 
 // ── Multi-tenant tests ──────────────────────────────────────────────

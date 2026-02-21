@@ -97,3 +97,54 @@ export async function deleteComment(id) {
   });
   await throwIfNotOk(res, "Failed to delete comment");
 }
+
+export async function fetchAnalytics(documentId) {
+  const res = await fetch(`${_baseUrl}/documents/${documentId}/analytics`, {
+    headers: authHeaders(),
+  });
+  await throwIfNotOk(res, "Failed to fetch analytics");
+  return res.json();
+}
+
+// ── Template API ──────────────────────────────────────────────────
+
+export async function fetchTemplates(author) {
+  const res = await fetch(
+    `${_baseUrl}/templates?author=${encodeURIComponent(author)}`,
+    { headers: authHeaders() }
+  );
+  await throwIfNotOk(res, "Failed to fetch templates");
+  const json = await res.json();
+  return json.data;
+}
+
+export async function createTemplate({ name, body, author, shared }) {
+  const res = await fetch(`${_baseUrl}/templates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ name, body, author, shared }),
+  });
+  await throwIfNotOk(res, "Failed to create template");
+  return res.json();
+}
+
+export async function updateTemplate(id, { name, body, shared }, author) {
+  const res = await fetch(
+    `${_baseUrl}/templates/${id}?author=${encodeURIComponent(author)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ name, body, shared }),
+    }
+  );
+  await throwIfNotOk(res, "Failed to update template");
+  return res.json();
+}
+
+export async function deleteTemplate(id, author) {
+  const res = await fetch(
+    `${_baseUrl}/templates/${id}?author=${encodeURIComponent(author)}`,
+    { method: "DELETE", headers: authHeaders() }
+  );
+  await throwIfNotOk(res, "Failed to delete template");
+}

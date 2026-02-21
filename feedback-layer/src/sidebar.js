@@ -11,8 +11,10 @@ import { escapeHtml } from "./utils/escape-html.js";
 import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
-import { initToastContainer } from "./toast.js";
+import { initToastContainer, showToast } from "./toast.js";
 import { debounce } from "./utils/debounce.js";
+import { fetchTemplates, createTemplate } from "./api.js";
+import { buildAnalyticsPanel, toggleAnalyticsPanel, updateAnalytics } from "./analytics-panel.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -27,6 +29,9 @@ let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
 let _onSearch = null;
+let _onAnalyticsToggle = null;
+let _analyticsVisible = false;
+let _templateCache = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
@@ -175,6 +180,13 @@ export function showCommentForm(quote) {
   _formEl.innerHTML = `
     <div class="fb-form-card">
       <div class="fb-form-quote">"${escapeHtml(truncate(quote, 120))}"</div>
+      <div class="fb-template-bar">
+        <button class="fb-template-picker-btn" title="Insert template">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Templates
+        </button>
+        <div class="fb-template-dropdown" style="display:none"></div>
+      </div>
       <textarea class="fb-form-textarea" placeholder="Write your comment..." rows="3"></textarea>
       <div class="fb-form-actions">
         <button class="fb-btn fb-btn-primary fb-submit-btn">Add Comment</button>
@@ -184,6 +196,7 @@ export function showCommentForm(quote) {
   `;
 
   const textarea = _formEl.querySelector(".fb-form-textarea");
+  setupTemplatePicker(_formEl, textarea);
   textarea.focus();
 
   const submitComment = () => {
@@ -346,6 +359,7 @@ function buildCard(ann, isReply) {
       <span class="fb-cmt-author">${escapeHtml(ann.author)}</span>
       <span class="fb-cmt-time">${timeAgo(ann.created_at)}</span>
       <button class="fb-cmt-edit" title="Edit">&#x270E;</button>
+      <button class="fb-cmt-save-template" title="Save as template">&#x2691;</button>
       ${!isReply ? `<button class="fb-cmt-resolve" title="${isClosed ? "Reopen" : "Resolve"}">${isClosed ? "&#x21a9;" : "&#x2713;"}</button>` : ""}
       <button class="fb-cmt-delete" title="Delete">&times;</button>
     </div>
@@ -353,7 +367,7 @@ function buildCard(ann, isReply) {
 
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit")) return;
+      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-cmt-save-template")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -371,6 +385,11 @@ function buildCard(ann, isReply) {
   card.querySelector(".fb-cmt-edit").addEventListener("click", (e) => {
     e.stopPropagation();
     showEditForm(ann, card);
+  });
+
+  card.querySelector(".fb-cmt-save-template").addEventListener("click", (e) => {
+    e.stopPropagation();
+    showSaveTemplateForm(ann, card);
   });
 
   card.querySelector(".fb-cmt-delete").addEventListener("click", (e) => {
@@ -393,12 +412,20 @@ function showReplyForm(parentId, threadEl, replyBtn) {
   const form = document.createElement("div");
   form.className = "fb-reply-form";
   form.innerHTML = `
+    <div class="fb-template-bar">
+      <button class="fb-template-picker-btn" title="Insert template">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Templates
+      </button>
+      <div class="fb-template-dropdown" style="display:none"></div>
+    </div>
     <textarea class="fb-form-textarea" placeholder="Write a reply..." rows="2"></textarea>
     <div class="fb-form-actions">
       <button class="fb-btn fb-btn-primary fb-reply-submit">Reply</button>
       <button class="fb-btn fb-btn-cancel fb-reply-cancel">Cancel</button>
     </div>
   `;
+  setupTemplatePicker(form, form.querySelector("textarea"));
 
   const submitReply = () => {
     if (!getCommenter()) {
@@ -468,6 +495,132 @@ function showEditForm(ann, card) {
   commentEl.querySelector(".fb-edit-cancel").addEventListener("click", () => {
     commentEl.textContent = originalText;
   });
+}
+
+function setupTemplatePicker(container, textarea) {
+  const btn = container.querySelector(".fb-template-picker-btn");
+  const dropdown = container.querySelector(".fb-template-dropdown");
+
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const isVisible = dropdown.style.display !== "none";
+    if (isVisible) { dropdown.style.display = "none"; return; }
+
+    const author = getCommenter();
+    if (!author) {
+      const nameInput = _sidebar.querySelector(".fb-name-input");
+      nameInput.focus();
+      nameInput.classList.add("fb-name-input-error");
+      setTimeout(() => nameInput.classList.remove("fb-name-input-error"), 2000);
+      return;
+    }
+
+    dropdown.innerHTML = '<div class="fb-template-empty">Loading...</div>';
+    dropdown.style.display = "";
+
+    try {
+      const templates = await fetchTemplates(author);
+      _templateCache = templates;
+      renderTemplateDropdown(dropdown, templates, author, textarea);
+    } catch {
+      dropdown.innerHTML = '<div class="fb-template-empty">Failed to load templates</div>';
+    }
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener("click", () => { dropdown.style.display = "none"; });
+}
+
+function renderTemplateDropdown(dropdown, templates, currentAuthor, textarea) {
+  dropdown.innerHTML = "";
+  if (templates.length === 0) {
+    dropdown.innerHTML = '<div class="fb-template-empty">No templates yet</div>';
+    return;
+  }
+
+  const mine = templates.filter(t => t.author === currentAuthor);
+  const shared = templates.filter(t => t.author !== currentAuthor && t.shared);
+
+  const addGroup = (label, items) => {
+    if (items.length === 0) return;
+    const groupLabel = document.createElement("div");
+    groupLabel.className = "fb-template-group-label";
+    groupLabel.textContent = label;
+    dropdown.appendChild(groupLabel);
+
+    for (const tpl of items) {
+      const item = document.createElement("div");
+      item.className = "fb-template-item";
+      item.textContent = tpl.name;
+      item.title = tpl.body;
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        textarea.value = tpl.body;
+        textarea.focus();
+        dropdown.style.display = "none";
+      });
+      dropdown.appendChild(item);
+    }
+  };
+
+  addGroup("My templates", mine);
+  addGroup("Shared templates", shared);
+}
+
+function showSaveTemplateForm(ann, card) {
+  // Don't add duplicate forms
+  if (card.querySelector(".fb-save-template-form")) return;
+
+  const author = getCommenter();
+  if (!author) {
+    const nameInput = _sidebar.querySelector(".fb-name-input");
+    nameInput.focus();
+    nameInput.classList.add("fb-name-input-error");
+    setTimeout(() => nameInput.classList.remove("fb-name-input-error"), 2000);
+    return;
+  }
+
+  const form = document.createElement("div");
+  form.className = "fb-save-template-form";
+  form.innerHTML = `
+    <input type="text" class="fb-name-input fb-tpl-name" placeholder="Template name..." maxlength="100">
+    <div class="fb-template-body-preview">${escapeHtml(truncate(ann.body, 100))}</div>
+    <label class="fb-filter-toggle">
+      <input type="checkbox" class="fb-tpl-shared">
+      <span>Share with all users</span>
+    </label>
+    <div class="fb-form-actions">
+      <button class="fb-btn fb-btn-primary fb-tpl-save">Save</button>
+      <button class="fb-btn fb-btn-cancel fb-tpl-cancel">Cancel</button>
+    </div>
+  `;
+
+  form.querySelector(".fb-tpl-save").addEventListener("click", async () => {
+    const name = form.querySelector(".fb-tpl-name").value.trim();
+    if (!name) {
+      form.querySelector(".fb-tpl-name").classList.add("fb-name-input-error");
+      setTimeout(() => form.querySelector(".fb-tpl-name").classList.remove("fb-name-input-error"), 2000);
+      return;
+    }
+    try {
+      await createTemplate({
+        name,
+        body: ann.body,
+        author,
+        shared: form.querySelector(".fb-tpl-shared").checked,
+      });
+      _templateCache = null;
+      form.remove();
+      showToast("Template saved", "success");
+    } catch (err) {
+      showToast(err.message || "Failed to save template", "error");
+    }
+  });
+
+  form.querySelector(".fb-tpl-cancel").addEventListener("click", () => form.remove());
+
+  card.appendChild(form);
+  form.querySelector(".fb-tpl-name").focus();
 }
 
 /**
@@ -1112,6 +1265,100 @@ function injectStyles() {
     }
     .fb-toast-dismiss:hover {
       color: #fff;
+    }
+
+    /* ── Templates ── */
+    .fb-template-bar {
+      position: relative;
+      margin-bottom: 6px;
+    }
+    .fb-template-picker-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: 1px solid var(--remarq-border-input);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--remarq-text-muted);
+      font-family: inherit;
+    }
+    .fb-template-picker-btn:hover {
+      border-color: var(--remarq-accent);
+      color: var(--remarq-accent);
+    }
+    .fb-template-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: var(--remarq-bg-surface);
+      border: 1px solid var(--remarq-border);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px var(--remarq-shadow);
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 2px;
+    }
+    .fb-template-group-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--remarq-text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 6px 10px 2px;
+    }
+    .fb-template-item {
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--remarq-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fb-template-item:hover {
+      background: var(--remarq-bg-hover);
+    }
+    .fb-template-empty {
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--remarq-text-faint);
+      font-style: italic;
+    }
+    .fb-cmt-save-template {
+      background: none;
+      border: none;
+      color: var(--remarq-icon-muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .fb-cmt-save-template:hover {
+      color: var(--remarq-accent);
+    }
+    .fb-save-template-form {
+      margin-top: 8px;
+      padding: 8px;
+      background: var(--remarq-bg-secondary);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .fb-save-template-form .fb-tpl-name {
+      font-size: 12px;
+      padding: 6px 8px;
+    }
+    .fb-template-body-preview {
+      font-size: 11px;
+      color: var(--remarq-text-faint);
+      font-style: italic;
+      padding: 4px 0;
     }
   `;
   document.head.appendChild(style);
