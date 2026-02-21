@@ -175,6 +175,10 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 - **One script tag** — drop-in integration for any HTML page
 - **Agent-ready API** — structured feedback your AI can consume and act on
 
+## Limitations
+
+**Iframe content:** Remarq cannot annotate content inside iframes due to browser cross-origin security restrictions.
+
 ## The Bottom Line
 
 Your team's feedback shouldn't rot in a Google Docs sidebar. Build the agent loop. Close the feedback cycle. Ship faster.

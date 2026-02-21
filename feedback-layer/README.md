@@ -59,6 +59,7 @@ Configure via data attributes on the script tag:
 | `data-api-url` | Yes | - | URL of your Remarq server |
 | `data-content-selector` | No | `"body"` | CSS selector for annotatable content |
 | `data-document-uri` | No | `window.location.pathname` | Unique identifier for this document |
+| `data-theme` | No | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
 
 ### Examples
 
@@ -89,29 +90,6 @@ Configure via data attributes on the script tag:
   data-document-uri="/docs/getting-started"
 ></script>
 ```
-
-## Iframe Limitations
-
-**Remarq cannot annotate content inside iframes**, regardless of origin.
-
-The feedback layer uses `document.querySelector()` and Apache Annotator to find and anchor text, which only operate within a single document context. Iframes have separate `contentDocument` objects that are not automatically traversed.
-
-**Current behavior:**
-- ✅ Content in the **parent document** is annotatable
-- ❌ Content **inside iframes** is not annotatable  
-- ✅ Iframes do not break parent page annotations
-
-**Workarounds:**
-
-1. **Embed Remarq inside the iframe** - Add the script tag to the iframe's source document (requires control of iframe source)
-2. **Load content without iframes** - Fetch and inject content directly into the parent page DOM instead of using iframes
-3. **Server-side rendering** - For static iframe content, render it into the parent page on the server
-
-For same-origin iframes, annotation support could be added as a future enhancement (requires iframe detection, recursive DOM traversal, and extended selector serialization). Cross-origin iframes are blocked by browser security policy and cannot be supported without embedding Remarq in the iframe source.
-
-See [`docs/iframe-support.md`](../docs/iframe-support.md) for full details and test pages.
-
----
 
 ## Comment Server
 
