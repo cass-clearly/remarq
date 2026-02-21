@@ -42,7 +42,7 @@ function layout(title, content) {
 </html>`;
 }
 
-function loginPage(error, csrfToken) {
+function loginPage(error) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -56,7 +56,6 @@ function loginPage(error, csrfToken) {
     <h1>Remarq Admin</h1>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     <form method="POST" action="/admin/login">
-      <input type="hidden" name="_csrf" value="${csrfToken || ""}">
       <label for="password">Password</label>
       <input type="password" id="password" name="password" required autofocus>
       <button type="submit">Login</button>
@@ -123,7 +122,7 @@ function documentDetailPage(doc, comments, csrfToken) {
         <div class="comment-header">
           <span class="comment-author">${escapeHtml(comment.author)}</span>
           <span class="comment-time" title="${escapeHtml(comment.created_at)}">${timeAgo(comment.created_at)}</span>
-          ${!isReply && comment.status ? `<span class="comment-status status-${comment.status}">${comment.status}</span>` : ""}
+          ${!isReply && comment.status ? `<span class="comment-status status-${escapeHtml(comment.status)}">${escapeHtml(comment.status)}</span>` : ""}
         </div>
         ${comment.quote ? `<blockquote>${escapeHtml(comment.quote)}</blockquote>` : ""}
         <p class="comment-body">${escapeHtml(comment.body)}</p>

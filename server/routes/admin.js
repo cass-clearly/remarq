@@ -11,12 +11,11 @@ function createAdminRouter(pool) {
 
   // ── Login ──────────────────────────────────────────────────────────
 
-  router.get("/login", (req, res) => {
+  router.get("/login", (_req, res) => {
     if (!process.env.ADMIN_PASSWORD) {
       return res.status(503).send("ADMIN_PASSWORD not configured");
     }
-    const csrf = ensureCsrfToken(req);
-    res.send(loginPage(null, csrf));
+    res.send(loginPage());
   });
 
   router.post("/login", (req, res) => {
@@ -24,8 +23,7 @@ function createAdminRouter(pool) {
       req.session.authenticated = true;
       return res.redirect("/admin/documents");
     }
-    const csrf = ensureCsrfToken(req);
-    res.status(401).send(loginPage("Invalid password", csrf));
+    res.status(401).send(loginPage("Invalid password"));
   });
 
   router.post("/logout", (req, res) => {

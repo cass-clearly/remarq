@@ -17,11 +17,12 @@ function requireAuth(req, res, next) {
 function verifyCsrf(req, res, next) {
   const token = req.body && req.body._csrf;
   const sessionToken = req.session && req.session.csrfToken;
-  if (
-    !token ||
-    !sessionToken ||
-    !timingSafeEqual(Buffer.from(token), Buffer.from(sessionToken))
-  ) {
+  if (!token || !sessionToken) {
+    return res.status(403).send("Invalid CSRF token");
+  }
+  const a = Buffer.from(token);
+  const b = Buffer.from(sessionToken);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return res.status(403).send("Invalid CSRF token");
   }
   next();

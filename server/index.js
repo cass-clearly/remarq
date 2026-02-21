@@ -15,6 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use(
+  "/admin",
   session({
     secret: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),
     resave: false,
