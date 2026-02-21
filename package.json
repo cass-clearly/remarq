@@ -10,6 +10,7 @@
     "build": "npm install --prefix feedback-layer && node feedback-layer/build.js && cp feedback-layer/dist/feedback-layer.js serve/feedback-layer.js",
     "test:server": "c8 --check-coverage --lines 80 node --test server/test.mjs",
     "test:client": "c8 --check-coverage --lines 80 --include=feedback-layer/src/utils/** --include=feedback-layer/src/prompt-builder.js node --test feedback-layer/test/test.mjs",
+    "test:e2e": "node --test --test-timeout=60000 e2e/test.mjs",
     "test": "npm run test:server && npm run test:client"
   },
   "devDependencies": {
