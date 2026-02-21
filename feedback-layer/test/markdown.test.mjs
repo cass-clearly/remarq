@@ -222,3 +222,15 @@ describe("isSafeUrl", async () => {
     assert.equal(isSafeUrl("java\rscript:alert(1)"), false);
   });
 });
+
+describe("renderMarkdown – line breaks", async () => {
+  const { renderMarkdown } = await import("../src/utils/markdown.js");
+
+  it("converts newlines to <br> tags", () => {
+    assert.equal(renderMarkdown("line1\nline2"), "line1<br>line2");
+  });
+
+  it("preserves multiple newlines", () => {
+    assert.equal(renderMarkdown("a\n\nb"), "a<br><br>b");
+  });
+});
