@@ -14,11 +14,16 @@
     "index.js",
     "generate-id.js",
     "normalize-uri.js",
-    "sanitize.js"
+    "sanitize.js",
+    "middleware/",
+    "routes/",
+    "views/",
+    "public/"
   ],
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "express-session": "^1.19.0",
     "pg": "^8.13.0"
   }
 }
