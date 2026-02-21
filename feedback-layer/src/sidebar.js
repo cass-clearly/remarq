@@ -11,6 +11,7 @@ import { escapeHtml } from "./utils/escape-html.js";
 import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
+import { initToastContainer } from "./toast.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -88,6 +89,9 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   document.body.appendChild(tab);
 
   document.body.appendChild(_sidebar);
+
+  // Toast container (lives inside the sidebar so it scrolls with it)
+  initToastContainer(_sidebar);
 
   _listEl = _sidebar.querySelector(".fb-comment-list");
   _formEl = _sidebar.querySelector(".fb-form-section");
@@ -806,6 +810,57 @@ function injectStyles() {
         opacity: 1;
         transform: translateY(0);
       }
+    }
+
+    /* Toast notifications */
+    .fb-toast-container {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .fb-toast {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      pointer-events: auto;
+      opacity: 0;
+      transform: translateY(100%);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .fb-toast-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .fb-toast-success {
+      background: #16a34a;
+    }
+    .fb-toast-error {
+      background: #dc2626;
+    }
+    .fb-toast-dismiss {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.8);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .fb-toast-dismiss:hover {
+      color: #fff;
     }
   `;
   document.head.appendChild(style);
