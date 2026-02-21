@@ -176,6 +176,7 @@ describe("API", async () => {
 
   beforeEach(async () => {
     await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM reactions");
     await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
@@ -1095,6 +1096,251 @@ describe("API", async () => {
     });
   });
 
+  // ── Reactions ────────────────────────────────────────────────────
+
+  describe("POST /comments/:id/reactions", () => {
+    it("adds a reaction to a comment", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      assert.equal(res.status, 201);
+      const json = await res.json();
+      assert.equal(json.comment_id, cmt.id);
+      assert.equal(json.reactions.length, 1);
+      assert.equal(json.reactions[0].emoji, "👍");
+      assert.equal(json.reactions[0].count, 1);
+      assert.deepEqual(json.reactions[0].authors, ["Alice"]);
+    });
+
+    it("multiple authors can react with same emoji", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react2", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      const res = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Bob" }),
+      });
+      const json = await res.json();
+      assert.equal(json.reactions[0].count, 2);
+      assert.deepEqual(json.reactions[0].authors, ["Alice", "Bob"]);
+    });
+
+    it("same author reacting twice with same emoji is idempotent", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react3", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      const res = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      assert.equal(res.status, 201);
+      const json = await res.json();
+      assert.equal(json.reactions[0].count, 1);
+    });
+
+    it("returns 400 for disallowed emoji", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react4", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "💩", author: "Alice" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("not allowed"));
+    });
+
+    it("returns 400 when emoji or author missing", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react5", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res1 = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍" }),
+      });
+      assert.equal(res1.status, 400);
+
+      const res2 = await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author: "Alice" }),
+      });
+      assert.equal(res2.status, 400);
+    });
+
+    it("returns 404 for nonexistent comment", async () => {
+      const res = await fetch(`${BASE}/comments/cmt_nonexistent/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      assert.equal(res.status, 404);
+    });
+  });
+
+  describe("DELETE /comments/:id/reactions/:emoji", () => {
+    it("removes a reaction", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/unreact", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+
+      const res = await fetch(
+        `${BASE}/comments/${cmt.id}/reactions/${encodeURIComponent("👍")}?author=Alice`,
+        { method: "DELETE" }
+      );
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.reactions.length, 0);
+    });
+
+    it("returns 400 when author query param missing", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/unreact2", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(
+        `${BASE}/comments/${cmt.id}/reactions/${encodeURIComponent("👍")}`,
+        { method: "DELETE" }
+      );
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 404 for nonexistent comment", async () => {
+      const res = await fetch(
+        `${BASE}/comments/cmt_nonexistent/reactions/${encodeURIComponent("👍")}?author=Alice`,
+        { method: "DELETE" }
+      );
+      assert.equal(res.status, 404);
+    });
+  });
+
+  describe("GET /comments includes reactions", () => {
+    it("returns reactions array on each comment", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react-list", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "❤️", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?document=${cmt.document}`);
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].reactions.length, 2);
+      const thumbs = json.data[0].reactions.find(r => r.emoji === "👍");
+      assert.equal(thumbs.count, 1);
+      assert.deepEqual(thumbs.authors, ["Alice"]);
+    });
+
+    it("returns empty reactions array when no reactions", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react-empty", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments?document=${cmt.document}`);
+      const json = await res.json();
+      assert.deepEqual(json.data[0].reactions, []);
+    });
+
+    it("GET /comments/:id includes reactions", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react-single", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "🎉", author: "Alice" }),
+      });
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`);
+      const json = await res.json();
+      assert.equal(json.reactions.length, 1);
+      assert.equal(json.reactions[0].emoji, "🎉");
+    });
+  });
+
+  describe("Reactions cascade on comment delete", () => {
+    it("deleting a comment removes its reactions", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/react-cascade", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍", author: "Alice" }),
+      });
+
+      await fetch(`${BASE}/comments/${cmt.id}`, { method: "DELETE" });
+
+      // Verify comment and reactions are gone
+      const res = await fetch(`${BASE}/comments/${cmt.id}`);
+      assert.equal(res.status, 404);
+    });
+  });
+
   // ── Admin dashboard ──────────────────────────────────────────────
 
   describe("Admin dashboard", () => {
@@ -1358,6 +1604,7 @@ describe("Multi-tenant API", async () => {
     server.close();
     delete process.env.MULTI_TENANT;
     await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM reactions");
     await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
@@ -1367,6 +1614,7 @@ describe("Multi-tenant API", async () => {
 
   beforeEach(async () => {
     await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM reactions");
     await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
