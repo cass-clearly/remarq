@@ -48,10 +48,9 @@ export function showToast(message, type = "success") {
     toast.classList.add("fb-toast-visible");
   });
 
-  // Auto-dismiss success toasts after 4s
-  if (type === "success") {
-    setTimeout(() => removeToast(toast), 4000);
-  }
+  // Auto-dismiss all toasts (errors get longer display time)
+  const dismissMs = type === "error" ? 8000 : 4000;
+  setTimeout(() => removeToast(toast), dismissMs);
 }
 
 function removeToast(toast) {

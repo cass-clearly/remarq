@@ -141,7 +141,7 @@ async function loadComments() {
     renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
-    showToast("Failed to load comments", "error");
+    showToast(`Failed to load comments: ${err.message}`, "error");
   }
 }
 
@@ -276,13 +276,12 @@ async function handleCommentSubmit({ comment, commenter }) {
     }
 
     renderComments(_comments, _anchoredIds, _commentRanges);
-    showToast("Comment saved", "success");
 
     // Clear selection
     window.getSelection().removeAllRanges();
   } catch (err) {
     console.error("[feedback-layer] Failed to create comment:", err);
-    showToast("Failed to save comment", "error");
+    showToast(`Failed to save comment: ${err.message}`, "error");
   }
 
   _pendingSelector = null;
@@ -314,10 +313,9 @@ async function handleResolve(commentId, resolved) {
     }
 
     renderComments(_comments, _anchoredIds, _commentRanges);
-    showToast(resolved ? "Comment resolved" : "Comment reopened", "success");
   } catch (err) {
     console.error("[feedback-layer] Failed to resolve comment:", err);
-    showToast("Failed to update comment", "error");
+    showToast(`Failed to update comment: ${err.message}`, "error");
   }
 }
 
@@ -332,10 +330,9 @@ async function handleReply({ parent_id, comment, commenter }) {
     });
     _comments.push(reply);
     renderComments(_comments, _anchoredIds, _commentRanges);
-    showToast("Reply saved", "success");
   } catch (err) {
     console.error("[feedback-layer] Failed to create reply:", err);
-    showToast("Failed to save reply", "error");
+    showToast(`Failed to save reply: ${err.message}`, "error");
   }
 }
 
@@ -345,10 +342,9 @@ async function handleEdit(commentId, comment) {
     const idx = _comments.findIndex((a) => a.id === commentId);
     if (idx !== -1) _comments[idx] = updated;
     renderComments(_comments, _anchoredIds, _commentRanges);
-    showToast("Comment updated", "success");
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
-    showToast("Failed to update comment", "error");
+    showToast(`Failed to update comment: ${err.message}`, "error");
   }
 }
 
@@ -361,10 +357,9 @@ async function handleDelete(commentId) {
       (a) => a.id !== commentId && a.parent !== commentId
     );
     renderComments(_comments, _anchoredIds, _commentRanges);
-    showToast("Comment deleted", "success");
   } catch (err) {
     console.error("[feedback-layer] Failed to delete comment:", err);
-    showToast("Failed to delete comment", "error");
+    showToast(`Failed to delete comment: ${err.message}`, "error");
   }
 }
 
