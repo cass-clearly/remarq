@@ -15,7 +15,7 @@
  * dev → staging → production).
  */
 
-import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
+import { setBaseUrl, setApiKey, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
@@ -59,9 +59,11 @@ function init() {
     documentId: scriptTag?.dataset.documentId || null,
     proxyUrl: scriptTag?.dataset.proxyUrl || null,
     model: scriptTag?.dataset.model || null,
+    apiKey: scriptTag?.dataset.apiKey || null,
   };
 
   setBaseUrl(config.apiUrl);
+  if (config.apiKey) setApiKey(config.apiKey);
 
   /**
    * Wait for Mermaid diagrams to finish rendering.

@@ -171,7 +171,7 @@ describe("API", async () => {
 
   after(async () => {
     server.close();
-    await pool.end();
+    // Don't end pool here — shared with multi-tenant suite below
   });
 
   beforeEach(async () => {
@@ -1321,6 +1321,375 @@ describe("API", async () => {
       assert.equal(res.status, 200);
       const css = await res.text();
       assert.ok(css.includes(".admin-nav"));
+    });
+  });
+});
+
+// ── Multi-tenant tests ──────────────────────────────────────────────
+
+describe("Multi-tenant API", async () => {
+  let app, pool, initSchema, server, BASE;
+
+  const KEY_A = "test_key_tenant_a";
+  const KEY_B = "test_key_tenant_b";
+
+  before(async () => {
+    // Enable multi-tenant mode — the tenant middleware checks this at request time
+    process.env.MULTI_TENANT = "true";
+
+    ({ app, pool, initSchema } = await import("./index.js"));
+    // Schema already initialized by previous suite, but ensure api_keys table exists
+    await initSchema();
+
+    // Insert test API keys
+    await pool.query("INSERT INTO api_keys (key, label) VALUES ($1, $2) ON CONFLICT DO NOTHING", [KEY_A, "Tenant A"]);
+    await pool.query("INSERT INTO api_keys (key, label) VALUES ($1, $2) ON CONFLICT DO NOTHING", [KEY_B, "Tenant B"]);
+
+    await new Promise((resolve) => {
+      server = app.listen(0, "127.0.0.1", () => {
+        const port = server.address().port;
+        BASE = `http://127.0.0.1:${port}`;
+        resolve();
+      });
+    });
+  });
+
+  after(async () => {
+    server.close();
+    delete process.env.MULTI_TENANT;
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+    await pool.query("DELETE FROM api_keys WHERE key IN ($1, $2)", [KEY_A, KEY_B]);
+    await pool.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+  });
+
+  function authHeader(key) {
+    return { Authorization: `Bearer ${key}` };
+  }
+
+  // ── Auth middleware ──────────────────────────────────────────
+
+  describe("tenant auth middleware", () => {
+    it("returns 401 when no Authorization header is sent", async () => {
+      const res = await fetch(`${BASE}/documents`);
+      assert.equal(res.status, 401);
+      const json = await res.json();
+      assert.equal(json.error.message, "API key required");
+    });
+
+    it("returns 401 for invalid API key", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Bearer invalid_key_12345" },
+      });
+      assert.equal(res.status, 401);
+      const json = await res.json();
+      assert.equal(json.error.message, "Invalid API key");
+    });
+
+    it("returns 401 for malformed Authorization header", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Basic abc123" },
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it("returns 401 for empty Bearer token", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Bearer " },
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it("allows valid API key", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(res.status, 200);
+    });
+
+    it("health endpoint does not require auth", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.deepEqual(json, { status: "ok" });
+    });
+  });
+
+  // ── Tenant isolation: documents ─────────────────────────────
+
+  describe("document isolation", () => {
+    it("tenant A cannot see tenant B documents", async () => {
+      // Tenant A creates a document
+      await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/page" }),
+      });
+
+      // Tenant B lists documents — should see nothing
+      const res = await fetch(`${BASE}/documents`, {
+        headers: authHeader(KEY_B),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 0);
+    });
+
+    it("same URI creates separate documents per tenant", async () => {
+      const uri = "https://example.com/shared-page";
+
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri }),
+      });
+      const docA = await resA.json();
+      assert.equal(resA.status, 201);
+
+      const resB = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ uri }),
+      });
+      const docB = await resB.json();
+      assert.equal(resB.status, 201);
+
+      // Different document IDs
+      assert.notEqual(docA.id, docB.id);
+      // Same URI
+      assert.equal(docA.uri, docB.uri);
+    });
+
+    it("GET /documents/:id returns 404 for another tenant's document", async () => {
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/a-only" }),
+      });
+      const docA = await resA.json();
+
+      const res = await fetch(`${BASE}/documents/${docA.id}`, {
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("DELETE /documents/:id returns 404 for another tenant's document", async () => {
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/a-delete" }),
+      });
+      const docA = await resA.json();
+
+      const res = await fetch(`${BASE}/documents/${docA.id}`, {
+        method: "DELETE",
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify document still exists for tenant A
+      const check = await fetch(`${BASE}/documents/${docA.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(check.status, 200);
+    });
+  });
+
+  // ── Tenant isolation: comments ──────────────────────────────
+
+  describe("comment isolation", () => {
+    it("tenant A cannot see tenant B comments", async () => {
+      // Tenant A creates a comment
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      // Tenant B lists comments for same URI — should see nothing
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent("https://example.com/p")}`, {
+        headers: authHeader(KEY_B),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 0);
+
+      // Tenant A sees the comment
+      const resA = await fetch(`${BASE}/comments?uri=${encodeURIComponent("https://example.com/p")}`, {
+        headers: authHeader(KEY_A),
+      });
+      const jsonA = await resA.json();
+      assert.equal(jsonA.data.length, 1);
+      assert.equal(jsonA.data[0].id, cmt.id);
+    });
+
+    it("GET /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p2", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("PATCH /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p3", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ body: "hacked" }),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify comment unchanged for tenant A
+      const check = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      const checkJson = await check.json();
+      assert.equal(checkJson.body, "b");
+    });
+
+    it("DELETE /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p4", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "DELETE",
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify comment still exists for tenant A
+      const check = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(check.status, 200);
+    });
+
+    it("POST /comments with another tenant's document ID returns 404", async () => {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/cross-doc" }),
+      });
+      const doc = await docRes.json();
+
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("cross-tenant list: GET /comments without document/uri is scoped", async () => {
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/xa", quote: "q", body: "tenant A comment", author: "a" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ uri: "https://example.com/xb", quote: "q", body: "tenant B comment", author: "b" }),
+      });
+
+      const resA = await fetch(`${BASE}/comments`, { headers: authHeader(KEY_A) });
+      const jsonA = await resA.json();
+      assert.equal(jsonA.data.length, 1);
+      assert.equal(jsonA.data[0].body, "tenant A comment");
+
+      const resB = await fetch(`${BASE}/comments`, { headers: authHeader(KEY_B) });
+      const jsonB = await resB.json();
+      assert.equal(jsonB.data.length, 1);
+      assert.equal(jsonB.data[0].body, "tenant B comment");
+    });
+
+    it("expand=document works within tenant scope", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/expand-mt", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}?expand=document`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.document.object, "document");
+      assert.equal(json.document.uri, "https://example.com/expand-mt");
+    });
+
+    it("status filter works in multi-tenant mode", async () => {
+      const uri = "https://example.com/status-mt";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q2", body: "will close", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&status=open`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c1.id);
+    });
+
+    it("search filter works in multi-tenant mode", async () => {
+      const uri = "https://example.com/search-mt";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks good", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=typo`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].body.includes("typo"));
     });
   });
 });
