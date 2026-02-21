@@ -755,6 +755,33 @@ function injectStyles() {
     }
     .fb-btn-cancel:hover { background: #e5e7eb; }
 
+    /* Annotation count badge on highlights */
+    .fb-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      min-width: 18px;
+      height: 18px;
+      line-height: 18px;
+      padding: 0 5px;
+      background: #7c3aed;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      border-radius: 9px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      cursor: pointer;
+      pointer-events: auto;
+      box-sizing: border-box;
+      z-index: 1;
+    }
+    .fb-badge:hover {
+      background: #6d28d9;
+      transform: scale(1.1);
+    }
+
     /* Annotate tooltip (appears on text selection) */
     .fb-annotate-tooltip {
       position: absolute;

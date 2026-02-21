@@ -225,6 +225,62 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── getAnnotationCounts ───────────────────────────────────────────────
+
+describe("getAnnotationCounts", async () => {
+  const { getAnnotationCounts } = await import("../src/utils/annotation-counts.js");
+
+  it("returns empty map for empty array", () => {
+    const counts = getAnnotationCounts([]);
+    assert.equal(counts.size, 0);
+  });
+
+  it("returns count of 1 for a single top-level comment", () => {
+    const counts = getAnnotationCounts([
+      { id: "c1", body: "hello" },
+    ]);
+    assert.equal(counts.get("c1"), 1);
+  });
+
+  it("counts replies toward the parent", () => {
+    const counts = getAnnotationCounts([
+      { id: "c1", body: "parent" },
+      { id: "r1", body: "reply1", parent: "c1" },
+      { id: "r2", body: "reply2", parent: "c1" },
+    ]);
+    assert.equal(counts.get("c1"), 3); // 1 parent + 2 replies
+  });
+
+  it("handles multiple top-level comments with different reply counts", () => {
+    const counts = getAnnotationCounts([
+      { id: "c1", body: "first" },
+      { id: "c2", body: "second" },
+      { id: "r1", body: "reply to c1", parent: "c1" },
+    ]);
+    assert.equal(counts.get("c1"), 2); // 1 parent + 1 reply
+    assert.equal(counts.get("c2"), 1); // 1 parent, no replies
+  });
+
+  it("handles replies appearing before their parent", () => {
+    const counts = getAnnotationCounts([
+      { id: "r1", body: "reply", parent: "c1" },
+      { id: "c1", body: "parent" },
+    ]);
+    assert.equal(counts.get("c1"), 2); // 1 parent + 1 reply
+  });
+
+  it("handles all top-level, no replies", () => {
+    const counts = getAnnotationCounts([
+      { id: "c1", body: "a" },
+      { id: "c2", body: "b" },
+      { id: "c3", body: "c" },
+    ]);
+    assert.equal(counts.get("c1"), 1);
+    assert.equal(counts.get("c2"), 1);
+    assert.equal(counts.get("c3"), 1);
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {

@@ -23,7 +23,9 @@ import {
   removeAllHighlights,
   setHighlightClickHandler,
   setActiveHighlight,
+  updateBadges,
 } from "./highlights.js";
+import { getAnnotationCounts } from "./utils/annotation-counts.js";
 import {
   createSidebar,
   showCommentForm,
@@ -43,6 +45,10 @@ let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
 let _anchoredIds = new Set();  // Track successfully anchored comments
 let _commentRanges = new Map();  // Map comment ID to its range for position sorting
+
+function refreshBadges() {
+  updateBadges(getAnnotationCounts(_comments));
+}
 
 function init() {
   const scriptTag =
@@ -139,6 +145,7 @@ async function loadComments() {
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
     showToast(`Failed to load comments: ${err.message}`, "error");
@@ -276,6 +283,7 @@ async function handleCommentSubmit({ comment, commenter }) {
     }
 
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
 
     // Clear selection
     window.getSelection().removeAllRanges();
@@ -313,6 +321,7 @@ async function handleResolve(commentId, resolved) {
     }
 
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
   } catch (err) {
     console.error("[feedback-layer] Failed to resolve comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
@@ -330,6 +339,7 @@ async function handleReply({ parent_id, comment, commenter }) {
     });
     _comments.push(reply);
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
   } catch (err) {
     console.error("[feedback-layer] Failed to create reply:", err);
     showToast(`Failed to save reply: ${err.message}`, "error");
@@ -342,6 +352,7 @@ async function handleEdit(commentId, comment) {
     const idx = _comments.findIndex((a) => a.id === commentId);
     if (idx !== -1) _comments[idx] = updated;
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
@@ -357,6 +368,7 @@ async function handleDelete(commentId) {
       (a) => a.id !== commentId && a.parent !== commentId
     );
     renderComments(_comments, _anchoredIds, _commentRanges);
+    refreshBadges();
   } catch (err) {
     console.error("[feedback-layer] Failed to delete comment:", err);
     showToast(`Failed to delete comment: ${err.message}`, "error");

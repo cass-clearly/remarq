@@ -8,6 +8,7 @@
 const HIGHLIGHT_CLASS = "fb-highlight";
 const ACTIVE_CLASS = "fb-highlight-active";
 const RESOLVED_CLASS = "fb-highlight-resolved";
+const BADGE_CLASS = "fb-badge";
 
 let _onHighlightClick = null;
 
@@ -325,6 +326,47 @@ export function setHighlightResolved(commentId, resolved) {
     removeHighlights(commentId);
   } else {
     // Re-anchoring is handled by the caller (index.js)
+  }
+}
+
+/**
+ * Update annotation count badges on highlights.
+ * Shows a pill-shaped badge at the top-right of the first <mark> for each
+ * comment when there are 2+ annotations (comment + replies).
+ *
+ * @param {Map<string, number>} counts - Map of comment ID to total annotation count
+ */
+export function updateBadges(counts) {
+  // Remove all existing badges
+  document.querySelectorAll(`.${BADGE_CLASS}`).forEach((b) => b.remove());
+
+  // Group highlight marks by comment ID — only need the first mark per comment
+  const seen = new Set();
+  const marks = document.querySelectorAll(`.${HIGHLIGHT_CLASS}[data-comment-id]`);
+
+  for (const mark of marks) {
+    const id = mark.dataset.commentId;
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const count = counts.get(id) || 0;
+    if (count <= 1) continue;
+
+    // Skip SVG highlights — badges are HTML-only
+    if (mark.tagName === 'g' || mark instanceof SVGElement) continue;
+
+    // Make the mark a positioning anchor
+    mark.style.position = "relative";
+
+    const badge = document.createElement("span");
+    badge.className = BADGE_CLASS;
+    badge.textContent = String(count);
+    badge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (_onHighlightClick) _onHighlightClick(id);
+    });
+
+    mark.appendChild(badge);
   }
 }
 
