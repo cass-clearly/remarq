@@ -5,9 +5,14 @@
  * and handles click-to-select for scrolling the sidebar to the comment.
  */
 
+import { DEFAULT_COLOR, hexToRgba, resolveColor } from "./utils/color.js";
+
 const HIGHLIGHT_CLASS = "fb-highlight";
 const ACTIVE_CLASS = "fb-highlight-active";
 const RESOLVED_CLASS = "fb-highlight-resolved";
+
+// Track per-comment colors for active highlight toggling
+const _commentColors = new Map();
 
 let _onHighlightClick = null;
 
@@ -18,8 +23,15 @@ export function setHighlightClickHandler(fn) {
 /**
  * Wrap a Range in <mark> elements. Returns an array of the created marks
  * (may be multiple if the range spans multiple text nodes).
+ *
+ * @param {Range} range
+ * @param {string} commentId
+ * @param {string} [color] - Hex color code (e.g. "#ff6b6b") or null for default
  */
-export function highlightRange(range, commentId) {
+export function highlightRange(range, commentId, color) {
+  const hex = resolveColor(color) || DEFAULT_COLOR;
+  _commentColors.set(commentId, hex);
+
   const marks = [];
 
   // If the range is within a single text node, simple wrap
@@ -27,7 +39,7 @@ export function highlightRange(range, commentId) {
     range.startContainer === range.endContainer &&
     range.startContainer.nodeType === Node.TEXT_NODE
   ) {
-    const mark = wrapTextRange(range, commentId);
+    const mark = wrapTextRange(range, commentId, hex);
     marks.push(mark);
   } else {
     // Complex range spanning multiple nodes — collect text nodes in range
@@ -47,7 +59,7 @@ export function highlightRange(range, commentId) {
       }
 
       if (!nodeRange.collapsed) {
-        marks.push(wrapTextRange(nodeRange, commentId));
+        marks.push(wrapTextRange(nodeRange, commentId, hex));
       }
     }
   }
@@ -55,7 +67,7 @@ export function highlightRange(range, commentId) {
   return marks;
 }
 
-function wrapTextRange(range, commentId) {
+function wrapTextRange(range, commentId, hex) {
   // Check if we're inside an SVG <text> element
   let node = range.commonAncestorContainer;
   while (node && node.nodeType !== Node.ELEMENT_NODE) {
@@ -86,14 +98,14 @@ function wrapTextRange(range, commentId) {
 
   // Use SVG rect highlighting for SVG text elements
   if (inSVGText && svgRoot) {
-    return createSVGHighlight(range, commentId, svgRoot);
+    return createSVGHighlight(range, commentId, svgRoot, hex);
   }
 
   // Regular HTML highlighting for HTML content
   const mark = document.createElement("mark");
   mark.className = HIGHLIGHT_CLASS;
   mark.dataset.commentId = commentId;
-  mark.style.backgroundColor = "rgba(255, 212, 0, 0.35)";
+  mark.style.backgroundColor = hexToRgba(hex, 0.35);
   mark.style.cursor = "pointer";
   mark.style.borderRadius = "2px";
   mark.addEventListener("click", () => {
@@ -114,7 +126,7 @@ function wrapTextRange(range, commentId) {
  * Create an SVG-compatible highlight using <rect> overlay.
  * Used for SVG <text> elements where HTML marks cannot be inserted.
  */
-function createSVGHighlight(range, commentId, svgRoot) {
+function createSVGHighlight(range, commentId, svgRoot, hex) {
   try {
     const rects = range.getClientRects();
     if (rects.length === 0) return null;
@@ -173,7 +185,7 @@ function createSVGHighlight(range, commentId, svgRoot) {
       highlightRect.setAttribute("y", localTopLeft.y);
       highlightRect.setAttribute("width", width);
       highlightRect.setAttribute("height", height);
-      highlightRect.setAttribute("fill", "#ffd400");
+      highlightRect.setAttribute("fill", hex);
       highlightRect.setAttribute("fill-opacity", "0.35");
       highlightRect.setAttribute("rx", "2");
       highlightRect.setAttribute("ry", "2");
@@ -233,6 +245,7 @@ function createSVGHighlight(range, commentId, svgRoot) {
  * Remove all highlights for a given comment ID.
  */
 export function removeHighlights(commentId) {
+  _commentColors.delete(commentId);
   const marks = document.querySelectorAll(
     `.${HIGHLIGHT_CLASS}[data-comment-id="${commentId}"]`
   );
@@ -284,9 +297,11 @@ export function removeAllHighlights() {
  */
 export function setActiveHighlight(commentId) {
   document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
-    const isActive = el.dataset.commentId === commentId;
-    const activeColor = "rgba(255, 180, 0, 0.55)";
-    const normalColor = "rgba(255, 212, 0, 0.35)";
+    const elId = el.dataset.commentId;
+    const isActive = elId === commentId;
+    const hex = _commentColors.get(elId) || DEFAULT_COLOR;
+    const activeColor = hexToRgba(hex, 0.55);
+    const normalColor = hexToRgba(hex, 0.35);
 
     if (isActive) {
       el.classList.add(ACTIVE_CLASS);
@@ -298,7 +313,8 @@ export function setActiveHighlight(commentId) {
     if (el.tagName === 'g' || el instanceof SVGElement) {
       const rects = el.querySelectorAll('rect');
       rects.forEach(rect => {
-        rect.setAttribute('fill', isActive ? activeColor : normalColor);
+        rect.setAttribute('fill', hex);
+        rect.setAttribute('fill-opacity', isActive ? '0.55' : '0.35');
       });
     } else {
       // Handle HTML highlights

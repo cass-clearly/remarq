@@ -102,6 +102,35 @@ describe("sanitize", async () => {
   });
 });
 
+describe("validate-color", async () => {
+  const { validateColor } = await import("./validate-color.js");
+
+  it("accepts preset names", () => {
+    assert.equal(validateColor("yellow"), "yellow");
+    assert.equal(validateColor("red"), "red");
+    assert.equal(validateColor("teal"), "teal");
+  });
+
+  it("normalizes preset names to lowercase", () => {
+    assert.equal(validateColor("RED"), "red");
+    assert.equal(validateColor("  Blue  "), "blue");
+  });
+
+  it("accepts valid hex codes", () => {
+    assert.equal(validateColor("#ff6b6b"), "#ff6b6b");
+    assert.equal(validateColor("#FF6B6B"), "#ff6b6b");
+  });
+
+  it("rejects invalid values", () => {
+    assert.equal(validateColor("invalid"), null);
+    assert.equal(validateColor("#fff"), null);
+    assert.equal(validateColor("rgb(0,0,0)"), null);
+    assert.equal(validateColor(""), null);
+    assert.equal(validateColor(null), null);
+    assert.equal(validateColor(undefined), null);
+  });
+});
+
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
@@ -406,6 +435,73 @@ describe("API", async () => {
       assert.equal(json.quote, "Future of ");
     });
 
+    it("creates comment with color preset name", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uri: "https://example.com/color-test",
+          quote: "colored text",
+          body: "my comment",
+          author: "tester",
+          color: "red",
+        }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 201);
+      assert.equal(json.color, "red");
+    });
+
+    it("creates comment with hex color", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uri: "https://example.com/color-test",
+          quote: "colored text",
+          body: "my comment",
+          author: "tester",
+          color: "#ff6b6b",
+        }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 201);
+      assert.equal(json.color, "#ff6b6b");
+    });
+
+    it("creates comment with null color (default)", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uri: "https://example.com/color-test",
+          quote: "text",
+          body: "no color",
+          author: "tester",
+        }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 201);
+      assert.equal(json.color, null);
+    });
+
+    it("returns 400 for invalid color", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uri: "https://example.com/color-test",
+          quote: "text",
+          body: "bad color",
+          author: "tester",
+          color: "neon-sparkle",
+        }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("color"));
+    });
+
     it("normalizes URI", async () => {
       const res = await fetch(`${BASE}/comments`, {
         method: "POST",
@@ -697,6 +793,62 @@ describe("API", async () => {
       });
       const json = await res.json();
       assert.equal(json.status, "open");
+    });
+
+    it("updates color", async () => {
+      const create = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/p", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await create.json();
+      assert.equal(cmt.color, null);
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: "blue" }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.color, "blue");
+    });
+
+    it("clears color with null", async () => {
+      const create = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/p", quote: "q", body: "b", author: "a", color: "red" }),
+      });
+      const cmt = await create.json();
+      assert.equal(cmt.color, "red");
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: null }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.color, null);
+    });
+
+    it("returns 400 for invalid color on PATCH", async () => {
+      const create = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/p", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await create.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: "invalid-color" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("color"));
     });
 
     it("returns 400 for invalid status", async () => {

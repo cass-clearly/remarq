@@ -40,8 +40,10 @@ export async function createComment({
   body,
   author,
   parent,
+  color,
 }) {
   const payload = { quote, prefix, suffix, body, author, parent };
+  if (color) payload.color = color;
   if (document) {
     payload.document = document;
   } else {
