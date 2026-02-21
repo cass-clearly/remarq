@@ -76,5 +76,8 @@ export function renderMarkdown(text) {
   // Restore code spans
   html = html.replace(/\x01(\d+)\x02/g, (_match, index) => codeSpans[index]);
 
+  // Convert line breaks to <br> tags (preserves paragraph structure)
+  html = html.replace(/\n/g, "<br>");
+
   return html;
 }

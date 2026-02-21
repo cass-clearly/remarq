@@ -74,6 +74,24 @@ describe("renderMarkdown", async () => {
     const result = renderMarkdown("[wiki](https://en.wikipedia.org/wiki/Foo_(bar))");
     assert.ok(result.includes('href="https://en.wikipedia.org/wiki/Foo_(bar)"'));
   });
+
+  it("converts line breaks to <br> tags", () => {
+    assert.equal(renderMarkdown("line one\nline two"), "line one<br>line two");
+  });
+
+  it("preserves paragraph breaks (double newlines)", () => {
+    const result = renderMarkdown("paragraph one\n\nparagraph two");
+    assert.equal(result, "paragraph one<br><br>paragraph two");
+  });
+
+  it("renders markdown with line breaks correctly", () => {
+    const input = "Why don't we allow `foobar = baz`?\n\n`code block`\n\n[google](https://google.com)";
+    const result = renderMarkdown(input);
+    assert.ok(result.includes("<code>foobar = baz</code>"));
+    assert.ok(result.includes("<code>code block</code>"));
+    assert.ok(result.includes("<br><br>"));
+    assert.ok(result.includes('<a href="https://google.com"'));
+  });
 });
 
 // ── XSS prevention ──────────────────────────────────────────────────
