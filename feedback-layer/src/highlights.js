@@ -276,6 +276,7 @@ export function removeHighlights(commentId) {
  * Use this before re-anchoring to ensure a clean slate.
  */
 export function removeAllHighlights() {
+  _commentColors.clear();
   const marks = document.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
   marks.forEach((mark) => {
     const parent = mark.parentNode;
