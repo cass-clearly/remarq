@@ -122,7 +122,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 
 ## API Reference
 
-Stripe-inspired resource pattern. All responses include an `object` field.
+Stripe-inspired resource pattern. All responses include an `object` field. **Full documentation with request/response schemas, error codes, and curl examples: [docs/api.md](docs/api.md)**
 
 ### Documents
 
