@@ -216,6 +216,12 @@ docker compose -f docker-compose.remarq.yml up --build
 
 ---
 
+## Known Limitations
+
+- **Canvas/WebGL content** — Remarq uses TextQuoteSelector to anchor annotations to DOM text nodes. Content rendered inside `<canvas>` elements (2D or WebGL) is a pixel buffer, not traversable text, so it cannot be selected or annotated.
+
+---
+
 ## License
 
 Remarq is dual-licensed:
