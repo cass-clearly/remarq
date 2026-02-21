@@ -7,6 +7,12 @@ import {
   scrollToHighlight,
 } from "./highlights.js";
 import { openModal } from "./ui.js";
+import { escapeHtml } from "./utils/escape-html.js";
+import { threadComments } from "./utils/thread-comments.js";
+import { truncate } from "./utils/truncate.js";
+import { timeAgo } from "./utils/time-ago.js";
+import { initToastContainer } from "./toast.js";
+import { debounce } from "./utils/debounce.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -20,9 +26,22 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onSearch = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
+let _lastMatchedIds = null;
+let _stylesInjected = false;
+
+/**
+ * Inject CSS styles eagerly (before sidebar DOM is created).
+ * Safe to call multiple times — only injects once.
+ */
+export function ensureStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
+  injectStyles();
+}
 
 export function getCommenter() {
   return localStorage.getItem(COMMENTER_KEY) || "";
@@ -38,14 +57,15 @@ export function getCommenter() {
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onSearch }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onSearch = onSearch;
 
-  injectStyles();
+  ensureStyles();
 
   _sidebar = document.createElement("div");
   _sidebar.className = "fb-sidebar fb-sidebar-collapsed";
@@ -66,6 +86,10 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
                value="${escapeHtml(getCommenter())}">
       </div>
       <div class="fb-filter-section">
+        <input type="text" class="fb-search-input" placeholder="Search comments...">
+        <select class="fb-author-filter">
+          <option value="">All authors</option>
+        </select>
         <label class="fb-filter-toggle">
           <input type="checkbox" class="fb-show-resolved-cb">
           <span>Show closed</span>
@@ -84,6 +108,9 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   document.body.appendChild(tab);
 
   document.body.appendChild(_sidebar);
+
+  // Toast container (lives inside the sidebar so it scrolls with it)
+  initToastContainer(_sidebar);
 
   _listEl = _sidebar.querySelector(".fb-comment-list");
   _formEl = _sidebar.querySelector(".fb-form-section");
@@ -106,8 +133,19 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   const resolvedCb = _sidebar.querySelector(".fb-show-resolved-cb");
   resolvedCb.addEventListener("change", () => {
     _showResolved = resolvedCb.checked;
-    renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
+    renderComments(_lastComments, _lastAnchoredIds, new Map(), _lastMatchedIds);
   });
+
+  // Search and author filter
+  const searchInput = _sidebar.querySelector(".fb-search-input");
+  const authorSelect = _sidebar.querySelector(".fb-author-filter");
+
+  const fireSearch = () => {
+    if (_onSearch) _onSearch(searchInput.value.trim(), authorSelect.value);
+  };
+
+  searchInput.addEventListener("input", debounce(fireSearch, 300));
+  authorSelect.addEventListener("change", fireSearch);
 }
 
 export function openSidebar() {
@@ -181,22 +219,19 @@ export function showCommentForm(quote) {
 }
 
 /**
- * Thread flat comments into parent + replies structure.
+ * Populate the author filter dropdown with unique author names.
  */
-function threadComments(comments) {
-  const topLevel = [];
-  const repliesByParent = new Map();
-
-  for (const ann of comments) {
-    if (ann.parent) {
-      if (!repliesByParent.has(ann.parent)) repliesByParent.set(ann.parent, []);
-      repliesByParent.get(ann.parent).push(ann);
-    } else {
-      topLevel.push(ann);
-    }
+export function setAuthors(authors) {
+  const select = _sidebar.querySelector(".fb-author-filter");
+  const current = select.value;
+  select.innerHTML = '<option value="">All authors</option>';
+  for (const name of authors.sort()) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
   }
-
-  return { topLevel, repliesByParent };
+  if (authors.includes(current)) select.value = current;
 }
 
 /**
@@ -206,10 +241,12 @@ function threadComments(comments) {
  * @param {Array} comments - All comments
  * @param {Set} anchoredIds - Set of comment IDs that successfully anchored to text
  * @param {Map} commentRanges - Map of comment ID to Range for position sorting
+ * @param {Set|null} matchedIds - Set of comment IDs matching active search, or null if no search
  */
-export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map()) {
+export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map(), matchedIds = null) {
   _lastComments = comments;
-  _lastAnchoredIds = anchoredIds;  // Store for later use
+  _lastAnchoredIds = anchoredIds;
+  _lastMatchedIds = matchedIds;
   _listEl.innerHTML = "";
 
   const { topLevel, repliesByParent } = threadComments(comments);
@@ -267,10 +304,16 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
     const thread = document.createElement("div");
     thread.className = "fb-thread";
 
+    // Dim thread if search is active and neither root nor any reply matches
+    const replies = repliesByParent.get(ann.id) || [];
+    if (matchedIds !== null) {
+      const threadMatches = matchedIds.has(ann.id) || replies.some(r => matchedIds.has(r.id));
+      if (!threadMatches) thread.classList.add("fb-thread-dimmed");
+    }
+
     thread.appendChild(buildCard(ann, false));
 
     // Render replies
-    const replies = repliesByParent.get(ann.id) || [];
     for (const reply of replies) {
       thread.appendChild(buildCard(reply, true));
     }
@@ -441,27 +484,6 @@ export function focusCommentCard(commentId) {
     card.classList.add("fb-cmt-active");
     card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
-}
-
-function truncate(str, max) {
-  return str.length > max ? str.slice(0, max) + "..." : str;
-}
-
-function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 function injectStyles() {
@@ -824,6 +846,45 @@ function injectStyles() {
     }
     .fb-filter-section {
       margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .fb-search-input {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--remarq-border-input);
+      border-radius: 6px;
+      font-size: 13px;
+      box-sizing: border-box;
+      font-family: inherit;
+      background: var(--remarq-bg-surface);
+      color: var(--remarq-text);
+    }
+    .fb-search-input:focus {
+      outline: none;
+      border-color: var(--remarq-accent);
+      box-shadow: 0 0 0 2px var(--remarq-accent-ring);
+    }
+    .fb-author-filter {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--remarq-border-input);
+      border-radius: 6px;
+      font-size: 13px;
+      box-sizing: border-box;
+      font-family: inherit;
+      background: var(--remarq-bg-surface);
+      color: var(--remarq-text);
+      cursor: pointer;
+    }
+    .fb-author-filter:focus {
+      outline: none;
+      border-color: var(--remarq-accent);
+      box-shadow: 0 0 0 2px var(--remarq-accent-ring);
+    }
+    .fb-thread-dimmed {
+      opacity: 0.35;
     }
     .fb-filter-toggle {
       display: flex;
@@ -962,33 +1023,95 @@ function injectStyles() {
     .fb-annotate-tooltip::after {
       content: '';
       position: absolute;
-      bottom: -6px;
+      top: -6px;
       left: 50%;
       transform: translateX(-50%);
       width: 0;
       height: 0;
       border-left: 8px solid transparent;
       border-right: 8px solid transparent;
-      border-top: 8px solid var(--remarq-accent);
-      filter: drop-shadow(0 2px 2px var(--remarq-shadow));
+      border-bottom: 8px solid var(--remarq-accent);
+      filter: drop-shadow(0 -2px 2px var(--remarq-shadow));
     }
     .fb-annotate-tooltip:hover {
       background: var(--remarq-accent-hover);
-      transform: translateY(-2px);
+      transform: translateY(2px);
       box-shadow: 0 6px 16px var(--remarq-accent-ring), 0 2px 6px var(--remarq-shadow-strong);
     }
     .fb-annotate-tooltip:hover::after {
-      border-top-color: var(--remarq-accent-hover);
+      border-bottom-color: var(--remarq-accent-hover);
+    }
+    @media (pointer: coarse) {
+      .fb-annotate-tooltip {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 15px;
+      }
+      .fb-annotate-tooltip svg {
+        width: 18px;
+        height: 18px;
+      }
     }
     @keyframes fb-tooltip-appear {
       from {
         opacity: 0;
-        transform: translateY(-4px);
+        transform: translateY(4px);
       }
       to {
         opacity: 1;
         transform: translateY(0);
       }
+    }
+
+    /* Toast notifications */
+    .fb-toast-container {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .fb-toast {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      pointer-events: auto;
+      opacity: 0;
+      transform: translateY(100%);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .fb-toast-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .fb-toast-success {
+      background: #16a34a;
+    }
+    .fb-toast-error {
+      background: #dc2626;
+    }
+    .fb-toast-dismiss {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.8);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .fb-toast-dismiss:hover {
+      color: #fff;
     }
   `;
   document.head.appendChild(style);

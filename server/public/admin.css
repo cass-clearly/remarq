@@ -1,0 +1,331 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #333;
+  background: #fafafa;
+  line-height: 1.5;
+}
+
+/* ── Nav ─────────────────────────────────────────── */
+
+.admin-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #7c3aed;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+}
+
+.nav-brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #fff;
+  text-decoration: none;
+}
+
+.nav-logout button {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.nav-logout button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Main ────────────────────────────────────────── */
+
+.admin-main {
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.breadcrumb {
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.breadcrumb a {
+  color: #7c3aed;
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  color: #999;
+  font-style: italic;
+  margin-top: 1rem;
+}
+
+/* ── Login ───────────────────────────────────────── */
+
+.login-container {
+  max-width: 360px;
+  margin: 6rem auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.login-container h1 {
+  text-align: center;
+  color: #7c3aed;
+  margin-bottom: 1.5rem;
+}
+
+.login-container label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: #555;
+}
+
+.login-container input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.login-container input:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+.login-container button {
+  width: 100%;
+  padding: 0.6rem;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-container button:hover {
+  background: #6d28d9;
+}
+
+.error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  border: 1px solid #fecaca;
+}
+
+/* ── Table ───────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+th {
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #888;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.9rem;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover td {
+  background: #f9f5ff;
+}
+
+.uri-cell a {
+  color: #7c3aed;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.uri-cell a:hover {
+  text-decoration: underline;
+}
+
+.count-cell {
+  text-align: center;
+  width: 100px;
+}
+
+.date-cell {
+  width: 140px;
+  color: #666;
+}
+
+/* ── Comments ────────────────────────────────────── */
+
+.doc-uri {
+  word-break: break-all;
+}
+
+.comment {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.comment.reply {
+  margin-left: 2rem;
+  background: #f9fafb;
+  border-color: #f3f4f6;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.comment-author {
+  font-weight: 600;
+}
+
+.comment-time {
+  color: #999;
+}
+
+.comment-status {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-open {
+  background: #ecfdf5;
+  color: #16a34a;
+}
+
+.status-closed {
+  background: #f3f4f6;
+  color: #666;
+}
+
+blockquote {
+  border-left: 3px solid #ffd400;
+  padding: 0.35rem 0.75rem;
+  margin: 0.35rem 0;
+  background: #fffbeb;
+  font-size: 0.85rem;
+  color: #555;
+  border-radius: 0 4px 4px 0;
+}
+
+.comment-body {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.delete-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.reason-input {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  width: 200px;
+}
+
+.reason-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+}
+
+.btn-delete {
+  padding: 0.25rem 0.6rem;
+  background: #fff;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.btn-delete:hover {
+  background: #fef2f2;
+}
+
+/* ── Responsive ──────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .admin-main {
+    padding: 0 1rem;
+  }
+
+  .comment.reply {
+    margin-left: 1rem;
+  }
+
+  .delete-form {
+    flex-wrap: wrap;
+  }
+
+  .reason-input {
+    width: 100%;
+  }
+}

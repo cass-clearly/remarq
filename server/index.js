@@ -1,15 +1,30 @@
 #!/usr/bin/env node
 const express = require("express");
 const cors = require("cors");
+const session = require("express-session");
+const rateLimit = require("express-rate-limit");
+const { randomBytes } = require("crypto");
 const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { createAdminRouter } = require("./routes/admin.js");
+const { createTenantMiddleware } = require("./middleware/tenant.js");
 const path = require("path");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use(
+  "/admin",
+  session({
+    secret: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, sameSite: "lax" },
+  })
+);
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres@localhost/postgres";
 const pool = new Pool({ connectionString: DATABASE_URL });
@@ -45,6 +60,63 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moderation_log (
+      id              SERIAL PRIMARY KEY,
+      comment_id      TEXT NOT NULL,
+      document_id     TEXT NOT NULL,
+      action          TEXT NOT NULL,
+      reason          TEXT,
+      comment_body    TEXT,
+      comment_author  TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // ── Multi-tenant schema additions ───────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      key        TEXT PRIMARY KEY,
+      label      TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS api_key TEXT REFERENCES api_keys(key)`);
+
+  // Drop the original single-column UNIQUE on uri so that different tenants
+  // can annotate the same URI independently.  The two partial indexes below
+  // replace it: one for self-hosted (api_key IS NULL) and one per-tenant.
+  await pool.query(`ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_uri_key`);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uri_self_hosted
+    ON documents (uri) WHERE api_key IS NULL
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_apikey_uri
+    ON documents (api_key, uri) WHERE api_key IS NOT NULL
+  `);
+}
+
+// ── Tenant middleware + rate limiting ────────────────────────────────
+
+const tenantMiddleware = createTenantMiddleware(pool);
+app.use("/documents", tenantMiddleware);
+app.use("/comments", tenantMiddleware);
+
+if (process.env.MULTI_TENANT === "true") {
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000,
+    keyGenerator: (req) => req.apiKey || req.ip,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: { message: "Rate limit exceeded" } },
+  });
+  app.use("/documents", limiter);
+  app.use("/comments", limiter);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -71,24 +143,31 @@ function errorResponse(msg) { return { error: { message: msg } }; }
 
 // ── Helper: find or create document by URI ──────────────────────────
 
-async function findOrCreateDocument(uri) {
+async function findOrCreateDocument(uri, apiKey) {
   const normalized = normalizeUri(uri);
-  const { rows } = await pool.query("SELECT * FROM documents WHERE uri = $1", [normalized]);
+
+  const selectSql = apiKey
+    ? "SELECT * FROM documents WHERE uri = $1 AND api_key = $2"
+    : "SELECT * FROM documents WHERE uri = $1 AND api_key IS NULL";
+  const selectParams = apiKey ? [normalized, apiKey] : [normalized];
+
+  const { rows } = await pool.query(selectSql, selectParams);
   if (rows.length > 0) return { doc: rows[0], created: false };
 
   try {
     const doc = await insertWithId("doc", async (id) => {
-      const { rows } = await pool.query(
-        "INSERT INTO documents (id, uri) VALUES ($1, $2) RETURNING *",
-        [id, normalized]
-      );
+      const insertSql = apiKey
+        ? "INSERT INTO documents (id, uri, api_key) VALUES ($1, $2, $3) RETURNING *"
+        : "INSERT INTO documents (id, uri) VALUES ($1, $2) RETURNING *";
+      const insertParams = apiKey ? [id, normalized, apiKey] : [id, normalized];
+      const { rows } = await pool.query(insertSql, insertParams);
       return rows[0];
     });
     return { doc, created: true };
   } catch (err) {
     // Lost the race — another request created the document concurrently
     if (err.code === '23505') {
-      const { rows } = await pool.query("SELECT * FROM documents WHERE uri = $1", [normalized]);
+      const { rows } = await pool.query(selectSql, selectParams);
       if (rows.length > 0) return { doc: rows[0], created: false };
     }
     throw err;
@@ -103,8 +182,12 @@ app.get("/health", (_req, res) => {
 
 // ── Document endpoints ──────────────────────────────────────────────
 
-app.get("/documents", asyncHandler(async (_req, res) => {
-  const { rows } = await pool.query("SELECT * FROM documents ORDER BY created_at ASC");
+app.get("/documents", asyncHandler(async (req, res) => {
+  const sql = req.apiKey
+    ? "SELECT * FROM documents WHERE api_key = $1 ORDER BY created_at ASC"
+    : "SELECT * FROM documents WHERE api_key IS NULL ORDER BY created_at ASC";
+  const params = req.apiKey ? [req.apiKey] : [];
+  const { rows } = await pool.query(sql, params);
   res.json(listResponse(rows.map(formatDocument)));
 }));
 
@@ -113,7 +196,7 @@ app.post("/documents", asyncHandler(async (req, res) => {
   if (!uri) return res.status(400).json(errorResponse("uri is required"));
 
   try {
-    const { doc, created } = await findOrCreateDocument(uri);
+    const { doc, created } = await findOrCreateDocument(uri, req.apiKey);
     res.status(created ? 201 : 200).json(formatDocument(doc));
   } catch (err) {
     res.status(400).json(errorResponse(err.message));
@@ -121,12 +204,24 @@ app.post("/documents", asyncHandler(async (req, res) => {
 }));
 
 app.get("/documents/:id", asyncHandler(async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+  const sql = req.apiKey
+    ? "SELECT * FROM documents WHERE id = $1 AND api_key = $2"
+    : "SELECT * FROM documents WHERE id = $1 AND api_key IS NULL";
+  const params = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows } = await pool.query(sql, params);
   if (rows.length === 0) return res.status(404).json(errorResponse("Document not found"));
   res.json(formatDocument(rows[0]));
 }));
 
 app.delete("/documents/:id", asyncHandler(async (req, res) => {
+  // Verify document belongs to the requesting tenant before deleting
+  const checkSql = req.apiKey
+    ? "SELECT id FROM documents WHERE id = $1 AND api_key = $2"
+    : "SELECT id FROM documents WHERE id = $1 AND api_key IS NULL";
+  const checkParams = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows: check } = await pool.query(checkSql, checkParams);
+  if (check.length === 0) return res.status(404).json(errorResponse("Document not found"));
+
   await pool.query("DELETE FROM comments WHERE document = $1", [req.params.id]);
   const { rows } = await pool.query("DELETE FROM documents WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Document not found"));
@@ -136,7 +231,7 @@ app.delete("/documents/:id", asyncHandler(async (req, res) => {
 // ── Comment endpoints ───────────────────────────────────────────────
 
 app.get("/comments", asyncHandler(async (req, res) => {
-  const { document: docId, uri, status, expand } = req.query;
+  const { document: docId, uri, status, expand, search, author } = req.query;
 
   if (status !== undefined && status !== "open" && status !== "closed") {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
@@ -145,44 +240,70 @@ app.get("/comments", asyncHandler(async (req, res) => {
   let resolvedDocId;
 
   if (docId) {
+    // When scoped by tenant, verify the document belongs to this tenant
+    if (req.apiKey) {
+      const { rows } = await pool.query(
+        "SELECT id FROM documents WHERE id = $1 AND api_key = $2",
+        [docId, req.apiKey]
+      );
+      if (rows.length === 0) return res.json(listResponse([]));
+    }
     resolvedDocId = docId;
   } else if (uri) {
     let normalized;
     try { normalized = normalizeUri(uri); } catch { normalized = uri; }
-    const docResult = await pool.query("SELECT id FROM documents WHERE uri = $1", [normalized]);
+    const uriSql = req.apiKey
+      ? "SELECT id FROM documents WHERE uri = $1 AND api_key = $2"
+      : "SELECT id FROM documents WHERE uri = $1 AND api_key IS NULL";
+    const uriParams = req.apiKey ? [normalized, req.apiKey] : [normalized];
+    const docResult = await pool.query(uriSql, uriParams);
     if (docResult.rows.length === 0) return res.json(listResponse([]));
     resolvedDocId = docResult.rows[0].id;
   }
 
-  let rows;
-  if (resolvedDocId) {
-    if (status) {
-      ({ rows } = await pool.query(
-        `SELECT * FROM comments WHERE document = $1
-          AND ((parent IS NULL AND status = $2)
-            OR (parent IN (SELECT id FROM comments WHERE document = $1 AND parent IS NULL AND status = $2)))
-          ORDER BY created_at ASC`,
-        [resolvedDocId, status]
-      ));
-    } else {
-      ({ rows } = await pool.query(
-        "SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC",
-        [resolvedDocId]
-      ));
-    }
-  } else {
-    if (status) {
-      ({ rows } = await pool.query(
-        `SELECT * FROM comments
-          WHERE (parent IS NULL AND status = $1)
-            OR (parent IN (SELECT id FROM comments WHERE parent IS NULL AND status = $1))
-          ORDER BY created_at ASC`,
-        [status]
-      ));
-    } else {
-      ({ rows } = await pool.query("SELECT * FROM comments ORDER BY created_at ASC"));
-    }
+  // Build WHERE conditions dynamically
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+
+  // Tenant isolation: restrict to documents belonging to this API key
+  if (req.apiKey) {
+    conditions.push(`document IN (SELECT id FROM documents WHERE api_key = $${idx++})`);
+    params.push(req.apiKey);
   }
+
+  if (resolvedDocId) {
+    conditions.push(`document = $${idx++}`);
+    params.push(resolvedDocId);
+  }
+
+  if (status) {
+    const docCond = resolvedDocId ? `document = $${req.apiKey ? 2 : 1} AND ` : '';
+    conditions.push(
+      `((parent IS NULL AND status = $${idx})` +
+      ` OR (parent IN (SELECT id FROM comments WHERE ${docCond}parent IS NULL AND status = $${idx})))`
+    );
+    params.push(status);
+    idx++;
+  }
+
+  if (search) {
+    conditions.push(`(body ILIKE $${idx} OR quote ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
+  }
+
+  if (author) {
+    conditions.push(`author ILIKE $${idx}`);
+    params.push(author);
+    idx++;
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { rows } = await pool.query(
+    `SELECT * FROM comments ${where} ORDER BY created_at ASC`,
+    params
+  );
 
   let data = rows.map(formatComment);
 
@@ -217,11 +338,16 @@ app.post("/comments", asyncHandler(async (req, res) => {
   let documentId;
   try {
     if (docId) {
-      const result = await pool.query("SELECT id FROM documents WHERE id = $1", [docId]);
+      // Verify document exists and belongs to this tenant
+      const checkSql = req.apiKey
+        ? "SELECT id FROM documents WHERE id = $1 AND api_key = $2"
+        : "SELECT id FROM documents WHERE id = $1 AND api_key IS NULL";
+      const checkParams = req.apiKey ? [docId, req.apiKey] : [docId];
+      const result = await pool.query(checkSql, checkParams);
       if (result.rows.length === 0) return res.status(404).json(errorResponse("Document not found"));
       documentId = result.rows[0].id;
     } else {
-      const { doc } = await findOrCreateDocument(uri);
+      const { doc } = await findOrCreateDocument(uri, req.apiKey);
       documentId = doc.id;
     }
   } catch (err) {
@@ -241,7 +367,12 @@ app.post("/comments", asyncHandler(async (req, res) => {
 }));
 
 app.get("/comments/:id", asyncHandler(async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
+  // Join on documents to enforce tenant isolation
+  const sql = req.apiKey
+    ? "SELECT c.* FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key = $2"
+    : "SELECT c.* FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key IS NULL";
+  const params = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows } = await pool.query(sql, params);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   let comment = formatComment(rows[0]);
   if (req.query.expand === "document") {
@@ -252,7 +383,12 @@ app.get("/comments/:id", asyncHandler(async (req, res) => {
 }));
 
 app.patch("/comments/:id", asyncHandler(async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
+  // Join on documents to enforce tenant isolation
+  const selectSql = req.apiKey
+    ? "SELECT c.* FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key = $2"
+    : "SELECT c.* FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key IS NULL";
+  const selectParams = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows } = await pool.query(selectSql, selectParams);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
 
   const { body, status } = req.body;
@@ -277,11 +413,24 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
 }));
 
 app.delete("/comments/:id", asyncHandler(async (req, res) => {
+  // Join on documents to enforce tenant isolation
+  const checkSql = req.apiKey
+    ? "SELECT c.id FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key = $2"
+    : "SELECT c.id FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key IS NULL";
+  const checkParams = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows: check } = await pool.query(checkSql, checkParams);
+  if (check.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
   await pool.query("DELETE FROM comments WHERE parent = $1", [req.params.id]);
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   res.json(formatComment(rows[0]));
 }));
+
+// ── Admin dashboard (not tenant-scoped — server operator sees all) ──
+
+app.use("/admin", express.static(path.join(__dirname, "public")));
+app.use("/admin", createAdminRouter(pool));
 
 // ── Static files ────────────────────────────────────────────────────
 

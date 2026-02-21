@@ -44,3 +44,17 @@ If the review agent requests changes, fix them on the same branch, push, and re-
 ```
 gh pr merge --squash --delete-branch
 ```
+
+## Testing & Coverage
+
+Target 80-90% line coverage. 100% is a waste of time — diminishing returns kick in hard.
+
+### Running tests
+- **Server tests:** `npm run test:server`
+- **Client tests:** `npm run test:client`
+- **All tests:** `npm test`
+
+Both suites use `node:test` + `node:assert/strict` and `c8` for coverage with 80% line threshold.
+
+### Utility modules
+Pure functions live in `feedback-layer/src/utils/` as individual modules. These are imported by both the source files and the test files directly — no `_testExports` hacks needed. When adding testable logic, extract it to a utility file in this directory.

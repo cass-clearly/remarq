@@ -2,6 +2,8 @@
  * Formats comments and document content into a structured prompt for Claude.
  */
 
+import { formatComments } from "./utils/format-comments.js";
+
 /**
  * Build a Claude prompt from the document HTML and reviewer comments.
  *
@@ -44,38 +46,3 @@ Respond with:
 [numbered list matching feedback numbers, explaining what you changed]`;
 }
 
-/**
- * Format comments into a numbered list for the prompt, with threaded replies.
- */
-function formatComments(comments) {
-  // Thread into parents + replies
-  const topLevel = [];
-  const repliesByParent = new Map();
-  for (const ann of comments) {
-    if (ann.parent) {
-      if (!repliesByParent.has(ann.parent)) repliesByParent.set(ann.parent, []);
-      repliesByParent.get(ann.parent).push(ann);
-    } else {
-      topLevel.push(ann);
-    }
-  }
-
-  if (topLevel.length === 0) {
-    return "_No comments found._";
-  }
-
-  return topLevel
-    .map((ann, i) => {
-      const parts = [`**${i + 1}. [${ann.author}]**`];
-      if (ann.quote) parts.push(`Highlighted text: "${ann.quote}"`);
-      if (ann.body) parts.push(`Comment: ${ann.body}`);
-
-      const replies = repliesByParent.get(ann.id) || [];
-      for (const reply of replies) {
-        parts.push(`  - **[${reply.author}]** (reply): ${reply.body}`);
-      }
-
-      return parts.join("\n");
-    })
-    .join("\n\n");
-}

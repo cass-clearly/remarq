@@ -1,6 +1,9 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
+// Set ADMIN_PASSWORD for admin dashboard tests
+process.env.ADMIN_PASSWORD = "test-admin-pw";
+
 // ── Utility unit tests ──────────────────────────────────────────────
 
 describe("generate-id", async () => {
@@ -102,6 +105,52 @@ describe("sanitize", async () => {
   });
 });
 
+// ── Admin view helpers ──────────────────────────────────────────────
+
+describe("admin views", async () => {
+  const { escapeHtml, timeAgo } = await import("./views/admin.js");
+
+  it("escapeHtml escapes special characters", () => {
+    assert.equal(escapeHtml('<script>"&'), "&lt;script&gt;&quot;&amp;");
+  });
+
+  it("escapeHtml handles empty/null input", () => {
+    assert.equal(escapeHtml(""), "");
+    assert.equal(escapeHtml(null), "");
+    assert.equal(escapeHtml(undefined), "");
+  });
+
+  it("timeAgo returns just now for recent dates", () => {
+    assert.equal(timeAgo(new Date().toISOString()), "just now");
+  });
+
+  it("timeAgo returns minutes ago", () => {
+    const d = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "5m ago");
+  });
+
+  it("timeAgo returns hours ago", () => {
+    const d = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "3h ago");
+  });
+
+  it("timeAgo returns days ago", () => {
+    const d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "7d ago");
+  });
+});
+
+// ── Auth middleware ─────────────────────────────────────────────────
+
+describe("auth middleware", async () => {
+  const { checkPassword } = await import("./middleware/auth.js");
+
+  it("checkPassword returns false for empty input", () => {
+    assert.equal(checkPassword(""), false);
+    assert.equal(checkPassword(null), false);
+  });
+});
+
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
@@ -122,10 +171,12 @@ describe("API", async () => {
 
   after(async () => {
     server.close();
-    await pool.end();
+    // Don't end pool here — shared with multi-tenant suite below
   });
 
   beforeEach(async () => {
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
   });
@@ -190,6 +241,17 @@ describe("API", async () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message);
+    });
+
+    it("returns 400 when uri is invalid", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "not a url" }),
       });
       assert.equal(res.status, 400);
       const json = await res.json();
@@ -318,6 +380,28 @@ describe("API", async () => {
       assert.equal(res.status, 201);
       assert.equal(json.parent, parentJson.id);
       assert.equal(json.status, null);
+    });
+
+    it("returns 404 when document ID does not exist", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: "doc_nonexistent", quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 404);
+      const json = await res.json();
+      assert.ok(json.error.message);
+    });
+
+    it("returns 400 when neither uri nor document is provided", async () => {
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message);
     });
 
     it("returns 400 when body is missing", async () => {
@@ -580,6 +664,154 @@ describe("API", async () => {
       const json = await res.json();
       assert.equal(res.status, 200);
       assert.equal(json.data.length, 2); // root + reply
+      assert.equal(json.data[0].id, c1.id);
+    });
+
+    it("filters by search keyword in body", async () => {
+      const uri = "https://example.com/search-body";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo here", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks good to me", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=typo`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].body.includes("typo"));
+    });
+
+    it("filters by search keyword in quote", async () => {
+      const uri = "https://example.com/search-quote";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "important paragraph", body: "needs work", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "other text", body: "fine", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=important`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].quote.includes("important"));
+    });
+
+    it("search is case-insensitive", async () => {
+      const uri = "https://example.com/search-case";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "Fix the Bug", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=fix%20the%20bug`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+    });
+
+    it("search with no matches returns empty list", async () => {
+      const uri = "https://example.com/search-empty";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "hello world", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=nonexistent`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 0);
+    });
+
+    it("filters by author", async () => {
+      const uri = "https://example.com/author-filter";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "comment 1", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "comment 2", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&author=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].author, "Alice");
+    });
+
+    it("author filter is case-insensitive", async () => {
+      const uri = "https://example.com/author-case";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "b", author: "Alice" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&author=alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+    });
+
+    it("combines search and author filters", async () => {
+      const uri = "https://example.com/combined-filter";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "fix the bug", author: "Bob" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q3", body: "looks good", author: "Alice" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=fix&author=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].body, "fix the typo");
+      assert.equal(json.data[0].author, "Alice");
+    });
+
+    it("combines search with document param", async () => {
+      const uri = "https://example.com/search-doc";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix this issue", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks fine", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?document=${c1.document}&search=issue`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
       assert.equal(json.data[0].id, c1.id);
     });
   });
@@ -860,6 +1092,604 @@ describe("API", async () => {
     it("returns 404 for missing comment", async () => {
       const res = await fetch(`${BASE}/comments/cmt_nonexistent`, { method: "DELETE" });
       assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Admin dashboard ──────────────────────────────────────────────
+
+  describe("Admin dashboard", () => {
+
+    // Helper: extract Set-Cookie header from response
+    function getCookie(res) {
+      const raw = res.headers.get("set-cookie");
+      if (!raw) return "";
+      return raw.split(";")[0];
+    }
+
+    // Helper: login and return session cookie
+    async function adminLogin() {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=test-admin-pw",
+        redirect: "manual",
+      });
+      return getCookie(res);
+    }
+
+    it("GET /admin redirects to login when unauthenticated", async () => {
+      const res = await fetch(`${BASE}/admin/`, { redirect: "manual" });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/login"));
+    });
+
+    it("GET /admin/login returns login page", async () => {
+      const res = await fetch(`${BASE}/admin/login`);
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("Remarq Admin"));
+      assert.ok(html.includes('type="password"'));
+    });
+
+    it("POST /admin/login rejects wrong password", async () => {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=wrong",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 401);
+      const html = await res.text();
+      assert.ok(html.includes("Invalid password"));
+    });
+
+    it("POST /admin/login accepts correct password and redirects", async () => {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=test-admin-pw",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/documents"));
+      assert.ok(getCookie(res));
+    });
+
+    it("GET /admin/documents shows document list when authenticated", async () => {
+      const cookie = await adminLogin();
+
+      // Create a document with a comment
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-test" }),
+      });
+      const doc = await docRes.json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "test comment", author: "admin-tester" }),
+      });
+
+      const res = await fetch(`${BASE}/admin/documents`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("example.com/admin-test"));
+      assert.ok(html.includes("Documents"));
+    });
+
+    it("GET /admin/documents/:id shows document detail with comments", async () => {
+      const cookie = await adminLogin();
+
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-detail" }),
+      });
+      const doc = await docRes.json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "quoted text", body: "detail comment", author: "tester" }),
+      });
+
+      const res = await fetch(`${BASE}/admin/documents/${doc.id}`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("admin-detail"));
+      assert.ok(html.includes("detail comment"));
+      assert.ok(html.includes("tester"));
+      assert.ok(html.includes("quoted text"));
+    });
+
+    it("GET /admin/documents/:id returns 404 for missing document", async () => {
+      const cookie = await adminLogin();
+      const res = await fetch(`${BASE}/admin/documents/doc_nonexistent`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("POST /admin/comments/:id/delete deletes comment with CSRF and logs moderation", async () => {
+      const cookie = await adminLogin();
+
+      // Create a comment
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-delete" }),
+      });
+      const doc = await docRes.json();
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "spam comment", author: "spammer" }),
+      });
+      const cmt = await cmtRes.json();
+
+      // Load the document detail page to get the CSRF token
+      const detailRes = await fetch(`${BASE}/admin/documents/${doc.id}`, {
+        headers: { Cookie: cookie },
+      });
+      const html = await detailRes.text();
+      const csrfMatch = html.match(/name="_csrf" value="([^"]+)"/);
+      assert.ok(csrfMatch, "CSRF token should be present in form");
+      const csrfToken = csrfMatch[1];
+
+      // Delete the comment
+      const delRes = await fetch(`${BASE}/admin/comments/${cmt.id}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie,
+        },
+        body: `_csrf=${csrfToken}&reason=spam`,
+        redirect: "manual",
+      });
+      assert.equal(delRes.status, 302);
+
+      // Verify comment is deleted
+      const getRes = await fetch(`${BASE}/comments/${cmt.id}`);
+      assert.equal(getRes.status, 404);
+
+      // Verify moderation log entry
+      const { rows } = await pool.query(
+        "SELECT * FROM moderation_log WHERE comment_id = $1",
+        [cmt.id]
+      );
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].action, "delete");
+      assert.equal(rows[0].reason, "spam");
+      assert.equal(rows[0].comment_author, "spammer");
+    });
+
+    it("POST /admin/comments/:id/delete rejects without CSRF token", async () => {
+      const cookie = await adminLogin();
+
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-csrf" }),
+      });
+      const doc = await docRes.json();
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/admin/comments/${cmt.id}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie,
+        },
+        body: "reason=test",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 403);
+    });
+
+    it("POST /admin/logout destroys session", async () => {
+      const cookie = await adminLogin();
+
+      // Logout
+      const logoutRes = await fetch(`${BASE}/admin/logout`, {
+        method: "POST",
+        headers: { Cookie: cookie },
+        redirect: "manual",
+      });
+      assert.equal(logoutRes.status, 302);
+      assert.ok(logoutRes.headers.get("location").includes("/admin/login"));
+
+      // Session should be invalid now
+      const res = await fetch(`${BASE}/admin/documents`, {
+        headers: { Cookie: cookie },
+        redirect: "manual",
+      });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/login"));
+    });
+
+    it("serves admin.css static file", async () => {
+      const res = await fetch(`${BASE}/admin/admin.css`);
+      assert.equal(res.status, 200);
+      const css = await res.text();
+      assert.ok(css.includes(".admin-nav"));
+    });
+  });
+});
+
+// ── Multi-tenant tests ──────────────────────────────────────────────
+
+describe("Multi-tenant API", async () => {
+  let app, pool, initSchema, server, BASE;
+
+  const KEY_A = "test_key_tenant_a";
+  const KEY_B = "test_key_tenant_b";
+
+  before(async () => {
+    // Enable multi-tenant mode — the tenant middleware checks this at request time
+    process.env.MULTI_TENANT = "true";
+
+    ({ app, pool, initSchema } = await import("./index.js"));
+    // Schema already initialized by previous suite, but ensure api_keys table exists
+    await initSchema();
+
+    // Insert test API keys
+    await pool.query("INSERT INTO api_keys (key, label) VALUES ($1, $2) ON CONFLICT DO NOTHING", [KEY_A, "Tenant A"]);
+    await pool.query("INSERT INTO api_keys (key, label) VALUES ($1, $2) ON CONFLICT DO NOTHING", [KEY_B, "Tenant B"]);
+
+    await new Promise((resolve) => {
+      server = app.listen(0, "127.0.0.1", () => {
+        const port = server.address().port;
+        BASE = `http://127.0.0.1:${port}`;
+        resolve();
+      });
+    });
+  });
+
+  after(async () => {
+    server.close();
+    delete process.env.MULTI_TENANT;
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+    await pool.query("DELETE FROM api_keys WHERE key IN ($1, $2)", [KEY_A, KEY_B]);
+    await pool.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+  });
+
+  function authHeader(key) {
+    return { Authorization: `Bearer ${key}` };
+  }
+
+  // ── Auth middleware ──────────────────────────────────────────
+
+  describe("tenant auth middleware", () => {
+    it("returns 401 when no Authorization header is sent", async () => {
+      const res = await fetch(`${BASE}/documents`);
+      assert.equal(res.status, 401);
+      const json = await res.json();
+      assert.equal(json.error.message, "API key required");
+    });
+
+    it("returns 401 for invalid API key", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Bearer invalid_key_12345" },
+      });
+      assert.equal(res.status, 401);
+      const json = await res.json();
+      assert.equal(json.error.message, "Invalid API key");
+    });
+
+    it("returns 401 for malformed Authorization header", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Basic abc123" },
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it("returns 401 for empty Bearer token", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: { Authorization: "Bearer " },
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it("allows valid API key", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(res.status, 200);
+    });
+
+    it("health endpoint does not require auth", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.deepEqual(json, { status: "ok" });
+    });
+  });
+
+  // ── Tenant isolation: documents ─────────────────────────────
+
+  describe("document isolation", () => {
+    it("tenant A cannot see tenant B documents", async () => {
+      // Tenant A creates a document
+      await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/page" }),
+      });
+
+      // Tenant B lists documents — should see nothing
+      const res = await fetch(`${BASE}/documents`, {
+        headers: authHeader(KEY_B),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 0);
+    });
+
+    it("same URI creates separate documents per tenant", async () => {
+      const uri = "https://example.com/shared-page";
+
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri }),
+      });
+      const docA = await resA.json();
+      assert.equal(resA.status, 201);
+
+      const resB = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ uri }),
+      });
+      const docB = await resB.json();
+      assert.equal(resB.status, 201);
+
+      // Different document IDs
+      assert.notEqual(docA.id, docB.id);
+      // Same URI
+      assert.equal(docA.uri, docB.uri);
+    });
+
+    it("GET /documents/:id returns 404 for another tenant's document", async () => {
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/a-only" }),
+      });
+      const docA = await resA.json();
+
+      const res = await fetch(`${BASE}/documents/${docA.id}`, {
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("DELETE /documents/:id returns 404 for another tenant's document", async () => {
+      const resA = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/a-delete" }),
+      });
+      const docA = await resA.json();
+
+      const res = await fetch(`${BASE}/documents/${docA.id}`, {
+        method: "DELETE",
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify document still exists for tenant A
+      const check = await fetch(`${BASE}/documents/${docA.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(check.status, 200);
+    });
+  });
+
+  // ── Tenant isolation: comments ──────────────────────────────
+
+  describe("comment isolation", () => {
+    it("tenant A cannot see tenant B comments", async () => {
+      // Tenant A creates a comment
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      // Tenant B lists comments for same URI — should see nothing
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent("https://example.com/p")}`, {
+        headers: authHeader(KEY_B),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 0);
+
+      // Tenant A sees the comment
+      const resA = await fetch(`${BASE}/comments?uri=${encodeURIComponent("https://example.com/p")}`, {
+        headers: authHeader(KEY_A),
+      });
+      const jsonA = await resA.json();
+      assert.equal(jsonA.data.length, 1);
+      assert.equal(jsonA.data[0].id, cmt.id);
+    });
+
+    it("GET /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p2", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("PATCH /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p3", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ body: "hacked" }),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify comment unchanged for tenant A
+      const check = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      const checkJson = await check.json();
+      assert.equal(checkJson.body, "b");
+    });
+
+    it("DELETE /comments/:id returns 404 for another tenant's comment", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/p4", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "DELETE",
+        headers: authHeader(KEY_B),
+      });
+      assert.equal(res.status, 404);
+
+      // Verify comment still exists for tenant A
+      const check = await fetch(`${BASE}/comments/${cmt.id}`, {
+        headers: authHeader(KEY_A),
+      });
+      assert.equal(check.status, 200);
+    });
+
+    it("POST /comments with another tenant's document ID returns 404", async () => {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/cross-doc" }),
+      });
+      const doc = await docRes.json();
+
+      const res = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "b", author: "a" }),
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("cross-tenant list: GET /comments without document/uri is scoped", async () => {
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/xa", quote: "q", body: "tenant A comment", author: "a" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_B) },
+        body: JSON.stringify({ uri: "https://example.com/xb", quote: "q", body: "tenant B comment", author: "b" }),
+      });
+
+      const resA = await fetch(`${BASE}/comments`, { headers: authHeader(KEY_A) });
+      const jsonA = await resA.json();
+      assert.equal(jsonA.data.length, 1);
+      assert.equal(jsonA.data[0].body, "tenant A comment");
+
+      const resB = await fetch(`${BASE}/comments`, { headers: authHeader(KEY_B) });
+      const jsonB = await resB.json();
+      assert.equal(jsonB.data.length, 1);
+      assert.equal(jsonB.data[0].body, "tenant B comment");
+    });
+
+    it("expand=document works within tenant scope", async () => {
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri: "https://example.com/expand-mt", quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}?expand=document`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.document.object, "document");
+      assert.equal(json.document.uri, "https://example.com/expand-mt");
+    });
+
+    it("status filter works in multi-tenant mode", async () => {
+      const uri = "https://example.com/status-mt";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q1", body: "open one", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q2", body: "will close", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments/${c2.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&status=open`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c1.id);
+    });
+
+    it("search filter works in multi-tenant mode", async () => {
+      const uri = "https://example.com/search-mt";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(KEY_A) },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks good", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=typo`, {
+        headers: authHeader(KEY_A),
+      });
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].body.includes("typo"));
     });
   });
 });
