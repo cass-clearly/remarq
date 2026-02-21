@@ -69,6 +69,11 @@ describe("renderMarkdown", async () => {
     assert.equal(renderMarkdown("****"), "****");
     assert.equal(renderMarkdown("**"), "**");
   });
+
+  it("handles links with parentheses in URL", () => {
+    const result = renderMarkdown("[wiki](https://en.wikipedia.org/wiki/Foo_(bar))");
+    assert.ok(result.includes('href="https://en.wikipedia.org/wiki/Foo_(bar)"'));
+  });
 });
 
 // ── XSS prevention ──────────────────────────────────────────────────
@@ -185,5 +190,17 @@ describe("isSafeUrl", async () => {
 
   it("blocks javascript: with leading whitespace", () => {
     assert.equal(isSafeUrl("  javascript:alert(1)"), false);
+  });
+
+  it("blocks javascript: with embedded tabs", () => {
+    assert.equal(isSafeUrl("java\tscript:alert(1)"), false);
+  });
+
+  it("blocks javascript: with embedded newlines", () => {
+    assert.equal(isSafeUrl("java\nscript:alert(1)"), false);
+  });
+
+  it("blocks javascript: with embedded carriage returns", () => {
+    assert.equal(isSafeUrl("java\rscript:alert(1)"), false);
   });
 });

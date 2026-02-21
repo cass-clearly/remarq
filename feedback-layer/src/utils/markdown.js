@@ -17,9 +17,10 @@ import { escapeHtml } from "./escape-html.js";
  * @returns {boolean}
  */
 export function isSafeUrl(url) {
-  const trimmed = url.trim();
-  // Block known dangerous schemes (case-insensitive)
-  if (/^\s*(javascript|data|vbscript)\s*:/i.test(trimmed)) {
+  // Strip tab, newline, CR — browsers ignore these when parsing URL schemes,
+  // so "java\tscript:" would bypass a naive check.
+  const stripped = url.replace(/[\t\n\r]/g, "").trim();
+  if (/^\s*(javascript|data|vbscript)\s*:/i.test(stripped)) {
     return false;
   }
   return true;
@@ -42,11 +43,12 @@ export function renderMarkdown(text) {
 
   // Extract code spans first so their contents are protected from further parsing.
   // Replace with placeholders, apply bold/italic/links, then restore.
+  // Use \x01/\x02 as delimiters — escapeHtml never produces these, so no collision.
   const codeSpans = [];
   html = html.replace(/`([^`]+?)`/g, (_match, code) => {
     const index = codeSpans.length;
     codeSpans.push(`<code>${code}</code>`);
-    return `\x00CODE${index}\x00`;
+    return `\x01${index}\x02`;
   });
 
   // Bold (**text**)
@@ -55,8 +57,9 @@ export function renderMarkdown(text) {
   // Italic (*text*) — only match single asterisks not preceded/followed by another
   html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
 
-  // Links [text](url) — URL has already been HTML-escaped, so decode for validation
-  html = html.replace(/\[([^\]]+?)\]\(([^)]+?)\)/g, (_match, linkText, rawUrl) => {
+  // Links [text](url) — URL has already been HTML-escaped, so decode for validation.
+  // Allow one level of balanced parentheses in URLs (e.g. Wikipedia links).
+  html = html.replace(/\[([^\]]+?)\]\(((?:[^()]*|\([^()]*\))*)\)/g, (_match, linkText, rawUrl) => {
     const url = rawUrl
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
@@ -71,7 +74,7 @@ export function renderMarkdown(text) {
   });
 
   // Restore code spans
-  html = html.replace(/\x00CODE(\d+)\x00/g, (_match, index) => codeSpans[index]);
+  html = html.replace(/\x01(\d+)\x02/g, (_match, index) => codeSpans[index]);
 
   return html;
 }
