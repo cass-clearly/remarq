@@ -88,37 +88,41 @@ function init() {
   }
 
   const boot = async () => {
-    _root = document.querySelector(config.contentSelector) || document.body;
-    _docUri = config.documentUri || window.location.origin + window.location.pathname;
-    _docId = config.documentId || null;
+    try {
+      _root = document.querySelector(config.contentSelector) || document.body;
+      _docUri = config.documentUri || window.location.origin + window.location.pathname;
+      _docId = config.documentId || null;
 
-    // Sidebar
-    createSidebar({
-      onSubmit: handleCommentSubmit,
-      onDelete: handleDelete,
-      onResolve: handleResolve,
-      onReply: handleReply,
-      onEdit: handleEdit,
-    });
+      // Sidebar
+      createSidebar({
+        onSubmit: handleCommentSubmit,
+        onDelete: handleDelete,
+        onResolve: handleResolve,
+        onReply: handleReply,
+        onEdit: handleEdit,
+      });
 
-    // Highlight click → scroll sidebar to card
-    setHighlightClickHandler((id) => {
-      openSidebar();
-      focusCommentCard(id);
-      setActiveHighlight(id);
-    });
+      // Highlight click → scroll sidebar to card
+      setHighlightClickHandler((id) => {
+        openSidebar();
+        focusCommentCard(id);
+        setActiveHighlight(id);
+      });
 
-    // Text selection → "Annotate" tooltip
-    setupSelectionListener();
+      // Text selection → "Annotate" tooltip
+      setupSelectionListener();
 
-    // Wait for Mermaid to finish rendering before anchoring comments
-    await waitForMermaid();
+      // Wait for Mermaid to finish rendering before anchoring comments
+      await waitForMermaid();
 
-    // Load existing comments
-    loadComments();
+      // Load existing comments
+      loadComments();
 
-    // AI revision UI
-    initAuthorUI(config, () => _comments);
+      // AI revision UI
+      initAuthorUI(config, () => _comments);
+    } catch (err) {
+      console.error("[feedback-layer] Boot failed:", err);
+    }
   };
 
   if (document.readyState === "loading") {
@@ -355,4 +359,8 @@ async function handleDelete(commentId) {
   }
 }
 
-init();
+try {
+  init();
+} catch (err) {
+  console.error("[feedback-layer] Init failed:", err);
+}
