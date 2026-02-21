@@ -1387,7 +1387,7 @@ describe("email templates", async () => {
   const { instantNotification, digestNotification, escapeHtml, truncate } = await import("./notifications/templates.js");
 
   it("escapeHtml escapes special characters", () => {
-    assert.equal(escapeHtml('<script>"&'), "&lt;script&gt;&quot;&amp;");
+    assert.equal(escapeHtml('<script>"&\''), "&lt;script&gt;&quot;&amp;&#39;");
   });
 
   it("escapeHtml handles empty/null", () => {
@@ -1628,23 +1628,46 @@ describe("notification service", async () => {
     assert.equal(rows.length, 0);
   });
 
-  it("notifyOnComment notifies subscribers on reply", async () => {
+  it("notifyOnComment notifies parent author on reply", async () => {
     const sent = [];
     _setTransporter({
       sendMail: async (opts) => { sent.push(opts); },
     });
 
     await pool.query("INSERT INTO documents (id, uri) VALUES ('doc_notify6', 'https://example.com/n6')");
-    // Parent comment
+    // Parent comment by alice
     await pool.query("INSERT INTO comments (id, document, quote, body, author, status) VALUES ('cmt_parent6', 'doc_notify6', 'quote', 'original', 'alice@test.com', 'open')");
     // Subscribe alice to this document
     await pool.query("INSERT INTO notification_preferences (document, email, mode) VALUES ('doc_notify6', 'alice@test.com', 'instant')");
-    // Reply by someone else
+    // Reply by bob
     await pool.query("INSERT INTO comments (id, document, quote, body, author, parent) VALUES ('cmt_reply6', 'doc_notify6', '', 'reply text', 'bob', 'cmt_parent6')");
 
     const comment = { id: "cmt_reply6", quote: "", body: "reply text", author: "bob", parent: "cmt_parent6" };
     await notifyOnComment(pool, comment, "doc_notify6");
 
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, "alice@test.com");
+  });
+
+  it("notifyOnComment does NOT notify unrelated subscribers on reply", async () => {
+    const sent = [];
+    _setTransporter({
+      sendMail: async (opts) => { sent.push(opts); },
+    });
+
+    await pool.query("INSERT INTO documents (id, uri) VALUES ('doc_notify7', 'https://example.com/n7')");
+    // Parent comment by alice
+    await pool.query("INSERT INTO comments (id, document, quote, body, author, status) VALUES ('cmt_parent7', 'doc_notify7', 'quote', 'original', 'alice@test.com', 'open')");
+    // Subscribe alice AND charlie — charlie is unrelated to this thread
+    await pool.query("INSERT INTO notification_preferences (document, email, mode) VALUES ('doc_notify7', 'alice@test.com', 'instant')");
+    await pool.query("INSERT INTO notification_preferences (document, email, mode) VALUES ('doc_notify7', 'charlie@test.com', 'instant')");
+    // Reply by bob
+    await pool.query("INSERT INTO comments (id, document, quote, body, author, parent) VALUES ('cmt_reply7', 'doc_notify7', '', 'reply text', 'bob', 'cmt_parent7')");
+
+    const comment = { id: "cmt_reply7", quote: "", body: "reply text", author: "bob", parent: "cmt_parent7" };
+    await notifyOnComment(pool, comment, "doc_notify7");
+
+    // Only alice (parent author) should be notified, not charlie
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, "alice@test.com");
   });
@@ -1785,6 +1808,26 @@ describe("Notification API", async () => {
       });
       assert.equal(res.status, 400);
     });
+
+    it("returns 400 for invalid email format", async () => {
+      const res = await fetch(`${BASE}/notifications/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "not-an-email", document: "doc_123" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("email"));
+    });
+
+    it("returns 404 for nonexistent document", async () => {
+      const res = await fetch(`${BASE}/notifications/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "test@example.com", document: "doc_nonexistent" }),
+      });
+      assert.equal(res.status, 404);
+    });
   });
 
   // ── Preferences ────────────────────────────────────────────
@@ -1850,6 +1893,26 @@ describe("Notification API", async () => {
         body: JSON.stringify({ email: "test@example.com" }),
       });
       assert.equal(res.status, 400);
+    });
+
+    it("returns 400 for invalid email format", async () => {
+      const res = await fetch(`${BASE}/notifications/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "garbage", document: "doc_123", mode: "instant" }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("email"));
+    });
+
+    it("returns 404 for nonexistent document", async () => {
+      const res = await fetch(`${BASE}/notifications/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "test@example.com", document: "doc_nonexistent", mode: "instant" }),
+      });
+      assert.equal(res.status, 404);
     });
   });
 

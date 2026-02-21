@@ -72,26 +72,24 @@ async function notifyOnComment(pool, comment, documentId) {
     await notifyRecipient(pool, doc.owner_email, doc.uri, comment, documentId);
   }
 
-  // 2. Notify parent comment author for replies
+  // 2. Notify parent comment author for replies (only if they're subscribed)
   if (comment.parent) {
-    // Find the parent comment's author email in notification_preferences
     const { rows: parentRows } = await pool.query(
       "SELECT author FROM comments WHERE id = $1",
       [comment.parent]
     );
     if (parentRows.length > 0) {
       const parentAuthor = parentRows[0].author;
-      // Look up subscribed emails for this document where the email was registered
-      // by the parent comment's author
-      const { rows: prefs } = await pool.query(
-        "SELECT email FROM notification_preferences WHERE document = $1 AND mode != 'none'",
-        [documentId]
-      );
-      for (const pref of prefs) {
-        // Skip if already notified or if the commenter is notifying themselves
-        if (notified.has(pref.email) || pref.email === comment.author) continue;
-        notified.add(pref.email);
-        await notifyRecipient(pool, pref.email, doc.uri, comment, documentId);
+      // Only notify the parent comment's author, not all subscribers
+      if (parentAuthor !== comment.author) {
+        const { rows: prefs } = await pool.query(
+          "SELECT email FROM notification_preferences WHERE document = $1 AND email = $2 AND mode != 'none'",
+          [documentId, parentAuthor]
+        );
+        if (prefs.length > 0 && !notified.has(prefs[0].email)) {
+          notified.add(prefs[0].email);
+          await notifyRecipient(pool, prefs[0].email, doc.uri, comment, documentId);
+        }
       }
     }
   }

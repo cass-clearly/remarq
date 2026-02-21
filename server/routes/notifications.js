@@ -8,6 +8,9 @@
 const express = require("express");
 const { verifyUnsubscribeToken } = require("../notifications/unsubscribe.js");
 
+// Basic email format check — not exhaustive, but catches garbage input.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function createNotificationRouter(pool) {
   const router = express.Router();
 
@@ -48,8 +51,18 @@ function createNotificationRouter(pool) {
       return res.status(400).json({ error: { message: "email, document, and mode are required" } });
     }
 
+    if (!EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: { message: "invalid email format" } });
+    }
+
     if (!["instant", "digest", "none"].includes(mode)) {
       return res.status(400).json({ error: { message: 'mode must be "instant", "digest", or "none"' } });
+    }
+
+    // Verify document exists
+    const { rows: docs } = await pool.query("SELECT id FROM documents WHERE id = $1", [document]);
+    if (docs.length === 0) {
+      return res.status(404).json({ error: { message: "Document not found" } });
     }
 
     await pool.query(`
@@ -69,9 +82,19 @@ function createNotificationRouter(pool) {
       return res.status(400).json({ error: { message: "email and document are required" } });
     }
 
+    if (!EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: { message: "invalid email format" } });
+    }
+
     const subscribeMode = mode || "instant";
     if (!["instant", "digest"].includes(subscribeMode)) {
       return res.status(400).json({ error: { message: 'mode must be "instant" or "digest"' } });
+    }
+
+    // Verify document exists
+    const { rows: docs } = await pool.query("SELECT id FROM documents WHERE id = $1", [document]);
+    if (docs.length === 0) {
+      return res.status(404).json({ error: { message: "Document not found" } });
     }
 
     await pool.query(`
