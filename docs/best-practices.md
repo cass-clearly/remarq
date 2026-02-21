@@ -455,9 +455,38 @@ This gives you a complete record of the feedback, including threaded discussions
 
 ### URI versioning strategies
 
-For versioned documents, use `data-document-uri` to separate annotation namespaces:
+For versioned documents, use `data-document-uri` to separate annotation namespaces.
 
-**Path-based versioning:**
+**Recommended: Server-generated document IDs**
+
+For global uniqueness, request a document ID from the server before embedding the script:
+
+```bash
+# Create a document and get its server-generated ID
+curl -X POST https://remarq.example.com/documents \
+  -H "Content-Type: application/json" \
+  -d '{"uri": "https://example.com/docs/proposal-v2"}' \
+  | jq -r '.id'
+# Returns: doc_7f3a9b2c
+```
+
+Then use that ID in your page:
+
+```html
+<script
+  src="https://remarq.example.com/feedback-layer.js"
+  data-api-url="https://remarq.example.com"
+  data-content-selector="article"
+  data-document-uri="doc_7f3a9b2c"
+></script>
+```
+
+Server-generated IDs guarantee uniqueness across your entire deployment, avoiding collisions when multiple teams or systems create documents independently.
+
+**Alternative: Path-based versioning**
+
+If you prefer human-readable URIs and control your namespace, path-based versioning works too:
+
 ```html
 <!-- v1 annotations stay on v1 -->
 <script ... data-document-uri="/docs/v1/proposal"></script>
@@ -466,12 +495,12 @@ For versioned documents, use `data-document-uri` to separate annotation namespac
 <script ... data-document-uri="/docs/v2/proposal"></script>
 ```
 
-**Date-based versioning:**
+**Alternative: Date-based versioning**
 ```html
 <script ... data-document-uri="/docs/proposal/2026-02-21"></script>
 ```
 
-This way, old annotations remain accessible via the API (for archival) while the new version starts fresh.
+All approaches keep old annotations accessible via the API (for archival) while the new version starts fresh.
 
 ### Maintaining annotation history
 
