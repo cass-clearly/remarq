@@ -666,6 +666,154 @@ describe("API", async () => {
       assert.equal(json.data.length, 2); // root + reply
       assert.equal(json.data[0].id, c1.id);
     });
+
+    it("filters by search keyword in body", async () => {
+      const uri = "https://example.com/search-body";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo here", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks good to me", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=typo`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].body.includes("typo"));
+    });
+
+    it("filters by search keyword in quote", async () => {
+      const uri = "https://example.com/search-quote";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "important paragraph", body: "needs work", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "other text", body: "fine", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=important`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.ok(json.data[0].quote.includes("important"));
+    });
+
+    it("search is case-insensitive", async () => {
+      const uri = "https://example.com/search-case";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "Fix the Bug", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=fix%20the%20bug`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+    });
+
+    it("search with no matches returns empty list", async () => {
+      const uri = "https://example.com/search-empty";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "hello world", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=nonexistent`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 0);
+    });
+
+    it("filters by author", async () => {
+      const uri = "https://example.com/author-filter";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "comment 1", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "comment 2", author: "Bob" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&author=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].author, "Alice");
+    });
+
+    it("author filter is case-insensitive", async () => {
+      const uri = "https://example.com/author-case";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q", body: "b", author: "Alice" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&author=alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+    });
+
+    it("combines search and author filters", async () => {
+      const uri = "https://example.com/combined-filter";
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix the typo", author: "Alice" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "fix the bug", author: "Bob" }),
+      });
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q3", body: "looks good", author: "Alice" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?uri=${encodeURIComponent(uri)}&search=fix&author=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].body, "fix the typo");
+      assert.equal(json.data[0].author, "Alice");
+    });
+
+    it("combines search with document param", async () => {
+      const uri = "https://example.com/search-doc";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "fix this issue", author: "a" }),
+      })).json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "looks fine", author: "a" }),
+      });
+
+      const res = await fetch(`${BASE}/comments?document=${c1.document}&search=issue`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].id, c1.id);
+    });
   });
 
   describe("GET /comments/:id", () => {

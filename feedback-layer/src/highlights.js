@@ -329,6 +329,31 @@ export function setHighlightResolved(commentId, resolved) {
 }
 
 /**
+ * Dim highlights for non-matching comments during search/filter.
+ * Pass an empty set to restore all highlights to normal.
+ */
+export function setDimmedHighlights(dimmedIds) {
+  const dimmedColor = "rgba(255, 212, 0, 0.12)";
+  const normalColor = "rgba(255, 212, 0, 0.35)";
+
+  document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
+    const commentId = el.dataset.commentId;
+    const isDimmed = dimmedIds.has(commentId);
+
+    if (el.classList.contains(ACTIVE_CLASS)) return; // Don't dim active highlight
+
+    if (el.tagName === 'g' || el instanceof SVGElement) {
+      const rects = el.querySelectorAll('rect');
+      rects.forEach(rect => {
+        rect.setAttribute('fill-opacity', isDimmed ? '0.12' : '0.35');
+      });
+    } else {
+      el.style.backgroundColor = isDimmed ? dimmedColor : normalColor;
+    }
+  });
+}
+
+/**
  * Collect all text nodes within a Range.
  */
 function getTextNodesInRange(range) {

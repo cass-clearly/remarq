@@ -225,6 +225,41 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── debounce ──────────────────────────────────────────────────────────
+
+describe("debounce", async () => {
+  const { debounce } = await import("../src/utils/debounce.js");
+
+  it("delays function execution", async () => {
+    let called = 0;
+    const fn = debounce(() => called++, 50);
+    fn();
+    assert.equal(called, 0);
+    await new Promise(r => setTimeout(r, 80));
+    assert.equal(called, 1);
+  });
+
+  it("resets timer on subsequent calls", async () => {
+    let called = 0;
+    const fn = debounce(() => called++, 50);
+    fn();
+    await new Promise(r => setTimeout(r, 30));
+    fn(); // reset timer
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(called, 0); // still waiting
+    await new Promise(r => setTimeout(r, 40));
+    assert.equal(called, 1); // fired once
+  });
+
+  it("passes arguments to the debounced function", async () => {
+    let result;
+    const fn = debounce((a, b) => { result = a + b; }, 50);
+    fn(2, 3);
+    await new Promise(r => setTimeout(r, 80));
+    assert.equal(result, 5);
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {
