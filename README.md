@@ -175,6 +175,10 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 - **One script tag** — drop-in integration for any HTML page
 - **Agent-ready API** — structured feedback your AI can consume and act on
 
+## Documentation
+
+- **[Best Practices Guide](docs/best-practices.md)** — Deployment configurations, content selector strategies, agent integration patterns, multi-reviewer workflows, and document lifecycle management.
+
 ## The Bottom Line
 
 Your team's feedback shouldn't rot in a Google Docs sidebar. Build the agent loop. Close the feedback cycle. Ship faster.
