@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Syntax Highlighting Test - Remarq</title>
+  
+  <!-- Prism.js for syntax highlighting -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  
+  <style>
+    body {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #1f2937;
+    }
+    article {
+      background: #f9fafb;
+      padding: 20px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Syntax Highlighting Test</h1>
+  
+  <article>
+    <h2>Test: Can Remarq annotate syntax-highlighted code?</h2>
+    
+    <p>Below is a JavaScript code block highlighted with Prism.js. Try selecting text within the code block and creating an annotation.</p>
+    
+    <h3>Prism.js Example</h3>
+    <pre><code class="language-javascript">function greet(name) {
+  console.log(`Hello, ${name}!`);
+  return `Welcome, ${name}`;
+}
+
+const message = greet('World');
+console.log(message);</code></pre>
+
+    <h3>Expected Issues</h3>
+    <p>Syntax highlighters wrap tokens in &lt;span&gt; elements, which fragments text nodes. This may cause:</p>
+    <ul>
+      <li>Text selection to behave oddly</li>
+      <li>Annotation anchoring to fail (can't find the quote)</li>
+      <li>Highlights to render incorrectly</li>
+    </ul>
+
+    <h3>Test Cases</h3>
+    <ol>
+      <li>Select a single word (e.g., "function") and annotate it</li>
+      <li>Select multiple tokens across spans (e.g., "console.log")</li>
+      <li>Select a full line including whitespace</li>
+      <li>Reload the page and verify annotations re-anchor correctly</li>
+    </ol>
+  </article>
+
+  <!-- Remarq feedback layer -->
+  <script src="serve/feedback-layer.js"
+    data-api-url="http://localhost:3333"
+    data-content-selector="article"
+    data-document-id="test-syntax-highlighting"
+  ></script>
+</body>
+</html>
