@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Canvas Test — Remarq</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      line-height: 1.6;
+    }
+    canvas {
+      border: 1px solid #ddd;
+      display: block;
+      margin: 20px 0;
+    }
+    .content {
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Canvas Content Test</h1>
+
+  <div class="content" id="annotatable">
+    <p>
+      This page tests Remarq's behavior with HTML5 Canvas elements. Canvas elements render
+      pixels directly, not DOM text nodes, so text selection and annotation are not possible
+      on canvas-rendered content.
+    </p>
+
+    <h2>Standard DOM Text (Annotatable)</h2>
+    <p>
+      You should be able to select and annotate this paragraph normally. Canvas is a bitmap
+      drawing surface — the browser rasterizes shapes and text to pixels. There are no underlying
+      DOM nodes representing individual words or characters.
+    </p>
+
+    <h2>Canvas Rendered Content (Not Annotatable)</h2>
+    <canvas id="testCanvas" width="600" height="200"></canvas>
+
+    <p>
+      <strong>Expected behavior:</strong> Attempting to select the text rendered <em>inside</em>
+      the canvas should not trigger Remarq's annotation button. Selecting text in this paragraph
+      (outside the canvas) should work normally.
+    </p>
+
+    <h2>Why This Limitation Exists</h2>
+    <p>
+      Remarq uses the W3C Web Annotation Data Model's <code>TextQuoteSelector</code> to anchor
+      annotations. This selector type requires traversable text nodes in the DOM. Canvas content
+      is a single <code>&lt;canvas&gt;</code> element with a pixel buffer — there's no text node
+      structure to traverse or select.
+    </p>
+
+    <p>
+      Future enhancement: A coordinate-based annotation system could allow drawing bounding boxes
+      on canvas content, but this would require a different data model and is outside the scope
+      of the initial release.
+    </p>
+  </div>
+
+  <script>
+    // Draw some text on the canvas to test selection behavior
+    const canvas = document.getElementById('testCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, 600, 200);
+
+    // Grid lines
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < 600; x += 50) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 200);
+      ctx.stroke();
+    }
+    for (let y = 0; y < 200; y += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(600, y);
+      ctx.stroke();
+    }
+
+    // Text (not selectable!)
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('This text is rendered on Canvas', 50, 80);
+
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText('You cannot select or annotate it!', 50, 120);
+
+    // Shape
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.6)';
+    ctx.beginPath();
+    ctx.arc(500, 150, 30, 0, Math.PI * 2);
+    ctx.fill();
+  </script>
+
+  <!-- Load Remarq -->
+  <script
+    src="../serve/feedback-layer.js"
+    data-api-url="http://localhost:3000"
+    data-content-selector="#annotatable"
+  ></script>
+</body>
+</html>

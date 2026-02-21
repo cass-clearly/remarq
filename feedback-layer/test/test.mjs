@@ -225,6 +225,59 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── color ─────────────────────────────────────────────────────────────
+
+describe("color utils", async () => {
+  const { resolveColor, hexToRgba, COLOR_PRESETS, DEFAULT_COLOR } = await import("../src/utils/color.js");
+
+  it("resolves preset names to hex codes", () => {
+    assert.equal(resolveColor("yellow"), "#ffd400");
+    assert.equal(resolveColor("red"), "#ff6b6b");
+    assert.equal(resolveColor("teal"), "#20c997");
+  });
+
+  it("resolves preset names case-insensitively", () => {
+    assert.equal(resolveColor("RED"), "#ff6b6b");
+    assert.equal(resolveColor("  Blue  "), "#339af0");
+  });
+
+  it("passes through valid hex codes", () => {
+    assert.equal(resolveColor("#aabbcc"), "#aabbcc");
+    assert.equal(resolveColor("#AABBCC"), "#aabbcc");
+  });
+
+  it("returns null for invalid values", () => {
+    assert.equal(resolveColor("invalid"), null);
+    assert.equal(resolveColor("#fff"), null);
+    assert.equal(resolveColor(""), null);
+    assert.equal(resolveColor(null), null);
+    assert.equal(resolveColor(undefined), null);
+    assert.equal(resolveColor(42), null);
+  });
+
+  it("converts hex to rgba", () => {
+    assert.equal(hexToRgba("#ff6b6b", 0.35), "rgba(255, 107, 107, 0.35)");
+    assert.equal(hexToRgba("#000000", 1), "rgba(0, 0, 0, 1)");
+    assert.equal(hexToRgba("#ffffff", 0.5), "rgba(255, 255, 255, 0.5)");
+  });
+
+  it("exports expected presets", () => {
+    assert.equal(Object.keys(COLOR_PRESETS).length, 8);
+    assert.ok(COLOR_PRESETS.yellow);
+    assert.ok(COLOR_PRESETS.red);
+    assert.ok(COLOR_PRESETS.green);
+    assert.ok(COLOR_PRESETS.blue);
+    assert.ok(COLOR_PRESETS.purple);
+    assert.ok(COLOR_PRESETS.pink);
+    assert.ok(COLOR_PRESETS.orange);
+    assert.ok(COLOR_PRESETS.teal);
+  });
+
+  it("has a default color matching yellow preset", () => {
+    assert.equal(DEFAULT_COLOR, COLOR_PRESETS.yellow);
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {
