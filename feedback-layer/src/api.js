@@ -82,3 +82,9 @@ export async function deleteComment(id) {
   });
   await throwIfNotOk(res, "Failed to delete comment");
 }
+
+export async function exportAnnotations(documentId, format) {
+  const res = await fetch(`${_baseUrl}/documents/${documentId}/export?format=${encodeURIComponent(format)}`);
+  await throwIfNotOk(res, "Failed to export annotations");
+  return res;
+}

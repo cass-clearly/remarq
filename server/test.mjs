@@ -102,6 +102,75 @@ describe("sanitize", async () => {
   });
 });
 
+describe("export-json", async () => {
+  const { exportJson } = await import("./export-json.js");
+
+  it("wraps comments in document envelope", () => {
+    const doc = { id: "doc_1", uri: "https://example.com/page" };
+    const comments = [
+      { id: "cmt_1", quote: "text", body: "note", author: "a", status: "open", parent: null, created_at: "2025-01-01T00:00:00.000Z" },
+    ];
+    const result = JSON.parse(exportJson(doc, comments));
+    assert.equal(result.document.id, "doc_1");
+    assert.equal(result.document.uri, "https://example.com/page");
+    assert.ok(result.document.exported_at);
+    assert.equal(result.annotations.length, 1);
+    assert.equal(result.annotations[0].body, "note");
+  });
+
+  it("sets status to null for replies", () => {
+    const doc = { id: "doc_1", uri: "https://example.com/page" };
+    const comments = [
+      { id: "cmt_2", quote: "", body: "reply", author: "b", status: "open", parent: "cmt_1", created_at: "2025-01-01T00:00:00.000Z" },
+    ];
+    const result = JSON.parse(exportJson(doc, comments));
+    assert.equal(result.annotations[0].status, null);
+  });
+});
+
+describe("export-csv", async () => {
+  const { exportCsv, escapeField } = await import("./export-csv.js");
+
+  it("escapeField wraps fields with commas", () => {
+    assert.equal(escapeField("a,b"), '"a,b"');
+  });
+
+  it("escapeField doubles internal quotes", () => {
+    assert.equal(escapeField('say "hi"'), '"say ""hi"""');
+  });
+
+  it("escapeField wraps fields with newlines", () => {
+    assert.equal(escapeField("a\nb"), '"a\nb"');
+  });
+
+  it("escapeField returns empty string for null", () => {
+    assert.equal(escapeField(null), "");
+  });
+
+  it("produces CSV with header and data rows", () => {
+    const comments = [
+      { id: "cmt_1", quote: "text", body: "note", author: "a", status: "open", parent: null, created_at: "2025-01-01T00:00:00.000Z" },
+    ];
+    const csv = exportCsv(comments);
+    const lines = csv.split("\r\n");
+    assert.equal(lines[0], "id,quote,body,author,status,parent,created_at");
+    assert.ok(lines[1].startsWith("cmt_1,text,note,a,open,"));
+  });
+
+  it("sets status to empty for replies", () => {
+    const comments = [
+      { id: "cmt_2", quote: "", body: "reply", author: "b", status: "open", parent: "cmt_1", created_at: "2025-01-01T00:00:00.000Z" },
+    ];
+    const csv = exportCsv(comments);
+    const lines = csv.split("\r\n");
+    // parent column should have cmt_1, status should be empty
+    assert.ok(lines[1].includes(",cmt_1,"));
+    // Status field (5th column) should be empty for replies
+    const fields = lines[1].split(",");
+    assert.equal(fields[4], ""); // status is empty for replies
+  });
+});
+
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
@@ -893,6 +962,124 @@ describe("API", async () => {
     it("returns 404 for missing comment", async () => {
       const res = await fetch(`${BASE}/comments/cmt_nonexistent`, { method: "DELETE" });
       assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Export ──────────────────────────────────────────────────────
+
+  describe("GET /documents/:id/export", () => {
+    it("returns 400 when format is missing", async () => {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/export-test" }),
+      });
+      const doc = await docRes.json();
+      const res = await fetch(`${BASE}/documents/${doc.id}/export`);
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("format"));
+    });
+
+    it("returns 400 for invalid format", async () => {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/export-test-bad" }),
+      });
+      const doc = await docRes.json();
+      const res = await fetch(`${BASE}/documents/${doc.id}/export?format=xml`);
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 404 for missing document", async () => {
+      const res = await fetch(`${BASE}/documents/doc_nonexistent/export?format=json`);
+      assert.equal(res.status, 404);
+    });
+
+    it("exports JSON with document envelope and annotations", async () => {
+      const uri = "https://example.com/export-json";
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "some text", body: "my note", author: "tester" }),
+      })).json();
+
+      // Add a reply
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, body: "reply note", author: "tester2", parent: cmt.id }),
+      });
+
+      const res = await fetch(`${BASE}/documents/${cmt.document}/export?format=json`);
+      assert.equal(res.status, 200);
+      assert.ok(res.headers.get("content-type").startsWith("application/json"));
+      assert.ok(res.headers.get("content-disposition").includes("attachment"));
+
+      const json = JSON.parse(await res.text());
+      assert.equal(json.document.uri, uri);
+      assert.ok(json.document.exported_at);
+      assert.equal(json.annotations.length, 2);
+      assert.equal(json.annotations[0].body, "my note");
+      assert.equal(json.annotations[0].status, "open");
+      assert.equal(json.annotations[1].body, "reply note");
+      assert.equal(json.annotations[1].parent, cmt.id);
+      assert.equal(json.annotations[1].status, null);
+    });
+
+    it("exports CSV with headers and escaped fields", async () => {
+      const uri = "https://example.com/export-csv";
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: 'text with "quotes"', body: "line1\nline2", author: "tester" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/documents/${cmt.document}/export?format=csv`);
+      assert.equal(res.status, 200);
+      assert.ok(res.headers.get("content-type").startsWith("text/csv"));
+      assert.ok(res.headers.get("content-disposition").includes(".csv"));
+
+      const text = await res.text();
+      const lines = text.split("\r\n");
+      assert.equal(lines[0], "id,quote,body,author,status,parent,created_at");
+      // Verify RFC 4180 escaping — quotes and newlines are wrapped
+      assert.ok(lines[1].includes('"text with ""quotes"""'));
+      assert.ok(text.includes('"line1\nline2"'));
+    });
+
+    it("exports PDF with correct content-type", async () => {
+      const uri = "https://example.com/export-pdf";
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "pdf text", body: "pdf note", author: "tester" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/documents/${cmt.document}/export?format=pdf`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "application/pdf");
+      assert.ok(res.headers.get("content-disposition").includes(".pdf"));
+
+      // Verify it's actually a PDF (starts with %PDF)
+      const buffer = await res.arrayBuffer();
+      const header = new TextDecoder().decode(new Uint8Array(buffer, 0, 5));
+      assert.equal(header, "%PDF-");
+    });
+
+    it("exports empty document with no comments", async () => {
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/export-empty" }),
+      });
+      const doc = await docRes.json();
+
+      const res = await fetch(`${BASE}/documents/${doc.id}/export?format=json`);
+      assert.equal(res.status, 200);
+      const json = JSON.parse(await res.text());
+      assert.equal(json.annotations.length, 0);
     });
   });
 });

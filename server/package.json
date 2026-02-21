@@ -14,11 +14,15 @@
     "index.js",
     "generate-id.js",
     "normalize-uri.js",
-    "sanitize.js"
+    "sanitize.js",
+    "export-json.js",
+    "export-csv.js",
+    "export-pdf.js"
   ],
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "pdfkit": "^0.17.2",
     "pg": "^8.13.0"
   }
 }

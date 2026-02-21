@@ -15,7 +15,7 @@
  * dev → staging → production).
  */
 
-import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
+import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus, exportAnnotations } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
@@ -101,6 +101,7 @@ function init() {
         onResolve: handleResolve,
         onReply: handleReply,
         onEdit: handleEdit,
+        onExport: handleExport,
       });
 
       // Highlight click → scroll sidebar to card
@@ -345,6 +346,30 @@ async function handleEdit(commentId, comment) {
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
+  }
+}
+
+async function handleExport(format) {
+  // Need a document ID for the export endpoint
+  const docId = _docId || (_comments.length > 0 ? _comments[0].document : null);
+  if (!docId) {
+    showToast("No document to export", "error");
+    return;
+  }
+  try {
+    const res = await exportAnnotations(docId, format);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `annotations.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("[feedback-layer] Export failed:", err);
+    showToast(`Export failed: ${err.message}`, "error");
   }
 }
 

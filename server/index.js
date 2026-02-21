@@ -5,6 +5,8 @@ const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { exportJson } = require("./export-json.js");
+const { exportCsv } = require("./export-csv.js");
 const path = require("path");
 
 const app = express();
@@ -131,6 +133,47 @@ app.delete("/documents/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("DELETE FROM documents WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Document not found"));
   res.json(formatDocument(rows[0]));
+}));
+
+// ── Export endpoint ─────────────────────────────────────────────────
+
+app.get("/documents/:id/export", asyncHandler(async (req, res) => {
+  const { format } = req.query;
+  if (!format || !["json", "csv", "pdf"].includes(format)) {
+    return res.status(400).json(errorResponse('format query parameter is required (json, csv, or pdf)'));
+  }
+
+  const { rows: docRows } = await pool.query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+  if (docRows.length === 0) return res.status(404).json(errorResponse("Document not found"));
+  const doc = docRows[0];
+
+  const { rows: comments } = await pool.query(
+    "SELECT * FROM comments WHERE document = $1 ORDER BY created_at ASC",
+    [req.params.id]
+  );
+
+  if (format === "json") {
+    const body = exportJson(doc, comments);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="${doc.id}-annotations.json"`);
+    return res.send(body);
+  }
+
+  if (format === "csv") {
+    const body = exportCsv(comments);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${doc.id}-annotations.csv"`);
+    return res.send(body);
+  }
+
+  if (format === "pdf") {
+    const { exportPdf } = require("./export-pdf.js");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${doc.id}-annotations.pdf"`);
+    const stream = exportPdf(doc, comments);
+    stream.pipe(res);
+    stream.end();
+  }
 }));
 
 // ── Comment endpoints ───────────────────────────────────────────────

@@ -25,6 +25,7 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onExport = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
@@ -42,13 +43,15 @@ export function getCommenter() {
  * @param {Function} opts.onResolve - Called with (commentId, resolved) when resolve toggled
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
+ * @param {Function} opts.onExport - Called with format string ("json", "csv", "pdf") when export selected
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onExport }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onExport = onExport;
 
   injectStyles();
 
@@ -58,6 +61,16 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
       <div class="fb-sidebar-header-actions">
+        <div class="fb-export-wrapper">
+          <button class="fb-export-btn" title="Export annotations">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+          <div class="fb-export-dropdown" style="display:none">
+            <button class="fb-export-option" data-format="json">JSON</button>
+            <button class="fb-export-option" data-format="csv">CSV</button>
+            <button class="fb-export-option" data-format="pdf">PDF</button>
+          </div>
+        </div>
         <button class="fb-ai-btn" title="Send feedback to Claude">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
         </button>
@@ -100,6 +113,25 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   const nameInput = _sidebar.querySelector(".fb-name-input");
   nameInput.addEventListener("input", () => {
     localStorage.setItem(COMMENTER_KEY, nameInput.value.trim());
+  });
+
+  // Export button in header
+  const exportBtn = _sidebar.querySelector(".fb-export-btn");
+  const exportDropdown = _sidebar.querySelector(".fb-export-dropdown");
+  exportBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isVisible = exportDropdown.style.display !== "none";
+    exportDropdown.style.display = isVisible ? "none" : "";
+  });
+  exportDropdown.querySelectorAll(".fb-export-option").forEach((opt) => {
+    opt.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportDropdown.style.display = "none";
+      if (_onExport) _onExport(opt.dataset.format);
+    });
+  });
+  document.addEventListener("click", () => {
+    exportDropdown.style.display = "none";
   });
 
   // AI button in header
@@ -494,6 +526,53 @@ function injectStyles() {
       display: flex;
       align-items: center;
       gap: 4px;
+    }
+    .fb-export-wrapper {
+      position: relative;
+    }
+    .fb-export-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #7c3aed;
+      padding: 4px;
+      line-height: 1;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-export-btn:hover {
+      background: #f3f0ff;
+    }
+    .fb-export-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      z-index: 10002;
+      min-width: 80px;
+      overflow: hidden;
+    }
+    .fb-export-option {
+      display: block;
+      width: 100%;
+      padding: 8px 14px;
+      border: none;
+      background: none;
+      text-align: left;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      color: #333;
+    }
+    .fb-export-option:hover {
+      background: #f3f0ff;
+      color: #7c3aed;
     }
     .fb-ai-btn {
       background: none;
