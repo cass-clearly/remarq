@@ -34,6 +34,7 @@ import {
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
+import { createDeferredQueue } from "./utils/deferred-queue.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
@@ -43,6 +44,9 @@ let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
 let _anchoredIds = new Set();  // Track successfully anchored comments
 let _commentRanges = new Map();  // Map comment ID to its range for position sorting
+let _deferredQueue = createDeferredQueue();  // Queue for comments that failed to anchor
+let _observer = null;   // MutationObserver for deferred anchoring
+let _retryTimer = null; // Debounce timer for retry attempts
 
 function init() {
   const scriptTag =
@@ -139,6 +143,11 @@ async function loadComments() {
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
     renderComments(_comments, _anchoredIds, _commentRanges);
+
+    // Start watching for DOM changes if any comments failed to anchor
+    if (_deferredQueue.hasPending()) {
+      observeContentChanges();
+    }
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
     showToast(`Failed to load comments: ${err.message}`, "error");
@@ -148,6 +157,7 @@ async function loadComments() {
 async function anchorAll(comments) {
   // Clean slate: remove all existing highlights before re-anchoring
   removeAllHighlights();
+  _deferredQueue.clear();
 
   const anchored = new Set();
   _commentRanges.clear();
@@ -156,11 +166,10 @@ async function anchorAll(comments) {
     // Skip replies - they don't have text anchors
     if (ann.parent) continue;
 
+    const selector = { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix };
+
     try {
-      const range = await rangeFromSelector(
-        { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
-        _root
-      );
+      const range = await rangeFromSelector(selector, _root);
 
       if (range && ann.status !== 'closed') {
         highlightRange(range, ann.id);
@@ -170,13 +179,98 @@ async function anchorAll(comments) {
         // Track as anchored even if closed (for reopen functionality)
         anchored.add(ann.id);
         _commentRanges.set(ann.id, range);
+      } else if (!range) {
+        // Text not found — queue for deferred anchoring
+        _deferredQueue.add(ann, selector);
       }
     } catch (e) {
       console.warn(`[feedback-layer] Could not anchor comment ${ann.id}:`, e);
     }
   }
 
+  if (_deferredQueue.hasPending()) {
+    console.log(`[feedback-layer] ${_deferredQueue.size()} comment(s) queued for deferred anchoring`);
+  }
+
   return anchored;
+}
+
+/**
+ * Watch the content root for DOM changes (e.g. accordion open, tab switch,
+ * lazy-loaded content). When mutations occur, retry anchoring queued comments.
+ */
+function observeContentChanges() {
+  if (_observer) return; // already observing
+
+  _observer = new MutationObserver(() => {
+    // Debounce: batch retries instead of firing on every mutation
+    clearTimeout(_retryTimer);
+    _retryTimer = setTimeout(retryFailedAnchors, 500);
+  });
+
+  _observer.observe(_root, {
+    childList: true,
+    subtree: true,
+  });
+}
+
+/**
+ * Stop the MutationObserver when no more retries are needed.
+ */
+function stopObserving() {
+  if (_observer) {
+    _observer.disconnect();
+    _observer = null;
+  }
+  clearTimeout(_retryTimer);
+  _retryTimer = null;
+}
+
+/**
+ * Retry anchoring comments that previously failed.
+ * Called by the MutationObserver when DOM content changes.
+ */
+async function retryFailedAnchors() {
+  const pending = _deferredQueue.getAll();
+  let anchored = false;
+
+  for (const { comment, selector } of pending) {
+    try {
+      const range = await rangeFromSelector(selector, _root);
+
+      if (range) {
+        console.log(`[feedback-layer] Deferred anchor succeeded for comment ${comment.id}`);
+        _deferredQueue.remove(comment.id);
+
+        if (comment.status !== 'closed') {
+          highlightRange(range, comment.id);
+        }
+
+        _anchoredIds.add(comment.id);
+        _commentRanges.set(comment.id, range);
+        anchored = true;
+      } else {
+        // Still not found — record attempt (auto-removes after max attempts)
+        const keepTrying = _deferredQueue.recordAttempt(comment.id);
+        if (!keepTrying) {
+          console.warn(`[feedback-layer] Gave up anchoring comment ${comment.id} after max retries`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[feedback-layer] Error retrying anchor for comment ${comment.id}:`, e);
+      _deferredQueue.recordAttempt(comment.id);
+    }
+  }
+
+  // Re-render sidebar if any new anchors succeeded
+  if (anchored) {
+    renderComments(_comments, _anchoredIds, _commentRanges);
+  }
+
+  // Stop observing if nothing left to retry
+  if (!_deferredQueue.hasPending()) {
+    stopObserving();
+  }
 }
 
 function setupSelectionListener() {
@@ -353,6 +447,7 @@ async function handleDelete(commentId) {
     await deleteComment(commentId);
     removeHighlights(commentId);
     _anchoredIds.delete(commentId);
+    _deferredQueue.remove(commentId);
     _comments = _comments.filter(
       (a) => a.id !== commentId && a.parent !== commentId
     );
