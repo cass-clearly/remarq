@@ -34,10 +34,12 @@ import {
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
+import { resolveColor, DEFAULT_COLOR } from "./utils/color.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
 let _docId = null;      // stable document ID (from data-document-id)
+let _defaultColor = null; // default highlight color (from data-default-color)
 let _comments = [];     // current comment list
 let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
@@ -57,6 +59,7 @@ function init() {
     proxyUrl: scriptTag?.dataset.proxyUrl || null,
     model: scriptTag?.dataset.model || null,
     theme: scriptTag?.dataset.theme || "auto",
+    defaultColor: scriptTag?.dataset.defaultColor || null,
   };
 
   setBaseUrl(config.apiUrl);
@@ -94,6 +97,7 @@ function init() {
       _root = document.querySelector(config.contentSelector) || document.body;
       _docUri = config.documentUri || window.location.origin + window.location.pathname;
       _docId = config.documentId || null;
+      _defaultColor = resolveColor(config.defaultColor) || null;
 
       // Set theme attribute on <html> for CSS variable scoping
       document.documentElement.dataset.remarqTheme = config.theme;
@@ -106,6 +110,7 @@ function init() {
         onReply: handleReply,
         onEdit: handleEdit,
         onReaction: handleReaction,
+        defaultColor: _defaultColor,
       });
 
       // Highlight click → scroll sidebar to card
@@ -168,7 +173,7 @@ async function anchorAll(comments) {
       );
 
       if (range && ann.status !== 'closed') {
-        highlightRange(range, ann.id);
+        highlightRange(range, ann.id, ann.color);
         anchored.add(ann.id);
         _commentRanges.set(ann.id, range);
       } else if (range && ann.status === 'closed') {
@@ -258,8 +263,10 @@ function removeTooltip() {
   }
 }
 
-async function handleCommentSubmit({ comment, commenter }) {
+async function handleCommentSubmit({ comment, commenter, color }) {
   if (!_pendingSelector) return;
+
+  const commentColor = color || _defaultColor || null;
 
   try {
     const ann = await createComment({
@@ -270,6 +277,7 @@ async function handleCommentSubmit({ comment, commenter }) {
       suffix: _pendingSelector.suffix,
       body: comment,
       author: commenter,
+      color: commentColor,
     });
 
     _comments.push(ann);
@@ -280,7 +288,7 @@ async function handleCommentSubmit({ comment, commenter }) {
       _root
     );
     if (range) {
-      highlightRange(range, ann.id);
+      highlightRange(range, ann.id, ann.color);
       _anchoredIds.add(ann.id);
     }
 
@@ -313,7 +321,7 @@ async function handleResolve(commentId, resolved) {
         _root
       );
       if (range) {
-        highlightRange(range, ann.id);
+        highlightRange(range, ann.id, ann.color);
         _anchoredIds.add(ann.id);
       } else {
         // Text no longer exists, remove from anchored set
