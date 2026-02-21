@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iframe Test - Same Origin</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      line-height: 1.6;
+      padding: 0 1rem;
+    }
+    h1 { color: #1e40af; }
+    .test-section {
+      margin: 2rem 0;
+      padding: 1rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    iframe {
+      width: 100%;
+      height: 400px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 4px;
+      margin: 1rem 0;
+    }
+    .note {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Remarq Iframe Test - Same Origin</h1>
+  
+  <div class="note">
+    <strong>Test Objective:</strong> Verify whether Remarq can annotate content inside same-origin iframes.
+  </div>
+
+  <div class="test-section">
+    <h2>Parent Page Content (Expected: ✅ Annotatable)</h2>
+    <p>
+      This text is in the parent document and should be annotatable. Try selecting 
+      this paragraph and verify that the "Annotate" button appears.
+    </p>
+    <p>
+      Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+      incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+      exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+    </p>
+  </div>
+
+  <div class="test-section">
+    <h2>Same-Origin Iframe (Expected: ❌ Not Annotatable)</h2>
+    <p>
+      The content below is loaded from <code>./iframe-content.html</code> (same origin).
+      Try selecting text inside the iframe and verify that the "Annotate" button does NOT appear.
+    </p>
+    <iframe src="./iframe-content.html"></iframe>
+    <p>
+      <strong>Result:</strong> The Annotate button should NOT appear when selecting iframe content,
+      even though it's same-origin. This is because <code>document.querySelector()</code> and 
+      Apache Annotator do not traverse into iframe document contexts.
+    </p>
+  </div>
+
+  <div class="test-section">
+    <h2>More Parent Content (Expected: ✅ Annotatable)</h2>
+    <p>
+      This text is also in the parent document and should be annotatable. This confirms 
+      that the iframe doesn't break annotation functionality on the parent page.
+    </p>
+  </div>
+
+  <script src="feedback-layer.js" 
+    data-api-url="http://localhost:3333"
+    data-content-selector="body"
+    data-document-id="iframe-test-same-origin"></script>
+</body>
+</html>
