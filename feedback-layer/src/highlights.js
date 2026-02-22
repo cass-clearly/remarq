@@ -8,6 +8,7 @@
 const HIGHLIGHT_CLASS = "fb-highlight";
 const ACTIVE_CLASS = "fb-highlight-active";
 const RESOLVED_CLASS = "fb-highlight-resolved";
+const PRIVATE_CLASS = "fb-highlight-private";
 
 let _onHighlightClick = null;
 
@@ -19,7 +20,7 @@ export function setHighlightClickHandler(fn) {
  * Wrap a Range in <mark> elements. Returns an array of the created marks
  * (may be multiple if the range spans multiple text nodes).
  */
-export function highlightRange(range, commentId) {
+export function highlightRange(range, commentId, { isPrivate } = {}) {
   const marks = [];
 
   // If the range is within a single text node, simple wrap
@@ -27,7 +28,7 @@ export function highlightRange(range, commentId) {
     range.startContainer === range.endContainer &&
     range.startContainer.nodeType === Node.TEXT_NODE
   ) {
-    const mark = wrapTextRange(range, commentId);
+    const mark = wrapTextRange(range, commentId, isPrivate);
     marks.push(mark);
   } else {
     // Complex range spanning multiple nodes — collect text nodes in range
@@ -47,7 +48,7 @@ export function highlightRange(range, commentId) {
       }
 
       if (!nodeRange.collapsed) {
-        marks.push(wrapTextRange(nodeRange, commentId));
+        marks.push(wrapTextRange(nodeRange, commentId, isPrivate));
       }
     }
   }
@@ -55,7 +56,7 @@ export function highlightRange(range, commentId) {
   return marks;
 }
 
-function wrapTextRange(range, commentId) {
+function wrapTextRange(range, commentId, isPrivate) {
   // Check if we're inside an SVG <text> element
   let node = range.commonAncestorContainer;
   while (node && node.nodeType !== Node.ELEMENT_NODE) {
@@ -91,11 +92,8 @@ function wrapTextRange(range, commentId) {
 
   // Regular HTML highlighting for HTML content
   const mark = document.createElement("mark");
-  mark.className = HIGHLIGHT_CLASS;
+  mark.className = HIGHLIGHT_CLASS + (isPrivate ? ` ${PRIVATE_CLASS}` : "");
   mark.dataset.commentId = commentId;
-  mark.style.backgroundColor = "rgba(255, 212, 0, 0.35)";
-  mark.style.cursor = "pointer";
-  mark.style.borderRadius = "2px";
   mark.addEventListener("click", () => {
     if (_onHighlightClick) _onHighlightClick(commentId);
   });
@@ -173,8 +171,6 @@ function createSVGHighlight(range, commentId, svgRoot) {
       highlightRect.setAttribute("y", localTopLeft.y);
       highlightRect.setAttribute("width", width);
       highlightRect.setAttribute("height", height);
-      highlightRect.setAttribute("fill", "#ffd400");
-      highlightRect.setAttribute("fill-opacity", "0.35");
       highlightRect.setAttribute("rx", "2");
       highlightRect.setAttribute("ry", "2");
       highlightRect.style.pointerEvents = "none"; // Let clicks pass through to text underneath
@@ -284,25 +280,10 @@ export function removeAllHighlights() {
  */
 export function setActiveHighlight(commentId) {
   document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
-    const isActive = el.dataset.commentId === commentId;
-    const activeColor = "rgba(255, 180, 0, 0.55)";
-    const normalColor = "rgba(255, 212, 0, 0.35)";
-
-    if (isActive) {
+    if (el.dataset.commentId === commentId) {
       el.classList.add(ACTIVE_CLASS);
     } else {
       el.classList.remove(ACTIVE_CLASS);
-    }
-
-    // Handle SVG highlights (update fill on rect children)
-    if (el.tagName === 'g' || el instanceof SVGElement) {
-      const rects = el.querySelectorAll('rect');
-      rects.forEach(rect => {
-        rect.setAttribute('fill', isActive ? activeColor : normalColor);
-      });
-    } else {
-      // Handle HTML highlights
-      el.style.backgroundColor = isActive ? activeColor : normalColor;
     }
   });
 }
@@ -326,6 +307,31 @@ export function setHighlightResolved(commentId, resolved) {
   } else {
     // Re-anchoring is handled by the caller (index.js)
   }
+}
+
+/**
+ * Dim highlights for non-matching comments during search/filter.
+ * Pass an empty set to restore all highlights to normal.
+ */
+export function setDimmedHighlights(dimmedIds) {
+  const dimmedColor = "rgba(255, 212, 0, 0.12)";
+  const normalColor = "rgba(255, 212, 0, 0.35)";
+
+  document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
+    const commentId = el.dataset.commentId;
+    const isDimmed = dimmedIds.has(commentId);
+
+    if (el.classList.contains(ACTIVE_CLASS)) return; // Don't dim active highlight
+
+    if (el.tagName === 'g' || el instanceof SVGElement) {
+      const rects = el.querySelectorAll('rect');
+      rects.forEach(rect => {
+        rect.setAttribute('fill-opacity', isDimmed ? '0.12' : '0.35');
+      });
+    } else {
+      el.style.backgroundColor = isDimmed ? dimmedColor : normalColor;
+    }
+  });
 }
 
 /**

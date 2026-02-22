@@ -92,6 +92,7 @@ Configure via `data-` attributes on the script tag:
 | `data-api-url` | `""` (same origin) | URL of the Remarq backend |
 | `data-content-selector` | `body` | CSS selector for the annotatable content area |
 | `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
+| `data-theme` | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
 
 ## Production
 
@@ -122,7 +123,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 
 ## API Reference
 
-Stripe-inspired resource pattern. All responses include an `object` field.
+Stripe-inspired resource pattern. All responses include an `object` field. **Full documentation with request/response schemas, error codes, and curl examples: [docs/api.md](docs/api.md)**
 
 ### Documents
 
@@ -164,6 +165,31 @@ Status is a thread-level concept — only root comments have status (`"open"` or
 ```
 
 For replies, set `parent` to the parent comment's ID. Replies don't need `quote`/`prefix`/`suffix`.
+
+## Admin Dashboard
+
+Remarq includes a built-in admin dashboard at `/admin` for managing documents and moderating comments.
+
+### Setup
+
+Set the `ADMIN_PASSWORD` environment variable to enable the dashboard:
+
+```bash
+ADMIN_PASSWORD=your-secret-password
+```
+
+Or add it to your `.env` file (see `.env.example`).
+
+### Features
+
+- **Document list** — view all documents with comment counts and last activity
+- **Document detail** — see all annotations and threaded replies for a document
+- **Comment moderation** — delete spam or inappropriate comments with a reason log
+- **Moderation log** — all deletions are recorded with the original comment content, author, and reason
+- **Session auth** — password-protected with CSRF protection on all actions
+- **No JS framework** — server-rendered HTML with progressive enhancement
+
+Visit `http://localhost:3333/admin` after starting the server.
 
 ## Features
 

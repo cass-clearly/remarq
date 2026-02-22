@@ -24,18 +24,22 @@ gh pr create --title "<concise title>" --body "<what changed and why>"
 PR description must explain: what was changed, why it was needed, and how to verify it.
 
 ### 4. Spawn a Review Agent
-After opening the PR, spawn a fresh **general-purpose** agent with this prompt:
+After opening the PR, spawn a review agent using the **Staff+ Craft Quality** persona.
 
-> You are a staff+ level engineer conducting a code review. Optimize for truth, not kindness.
-> Review PR: <PR URL>
+First, read the reviewer persona file, then use it as the system context for the review:
+
+> Read the file `/home/cass/.openclaw/workspace/reviewer-agents/staff-plus-quality.md` — that is your identity and review philosophy. Internalize it fully.
 >
-> You must:
-> - Run the full test suite and confirm it passes before approving
-> - Call out overengineering (unnecessary abstraction, premature generalization, excess complexity)
-> - Call out underengineering (missing error handling at system boundaries, unsafe assumptions, skipped validation)
-> - Flag any bugs, security issues, or API contract violations
-> - Verify the PR description accurately describes the changes
-> - Post your review via: `gh pr review <PR URL> --approve --body "..."` OR `gh pr review <PR URL> --request-changes --body "..."`
+> Now review this PR: <PR URL>
+>
+> Steps:
+> 1. Check out the PR branch and read the diff
+> 2. Run the full test suite (`npm test`) and confirm it passes
+> 3. Review every changed file through your Staff+ lens (see persona file for principles, checklist, anti-patterns)
+> 4. Format findings using the severity levels and output format defined in the persona
+> 5. Post your review via: `gh pr review <PR URL> --approve --body "..."` OR `gh pr review <PR URL> --request-changes --body "..."`
+>
+> Optimize for truth, not kindness. Praise good work. Push back on complexity.
 
 ### 5. Address Feedback
 If the review agent requests changes, fix them on the same branch, push, and re-spawn the review agent.
