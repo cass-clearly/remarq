@@ -837,6 +837,42 @@ describe("API", async () => {
       const res = await fetch(`${BASE}/comments/cmt_nonexistent`);
       assert.equal(res.status, 404);
     });
+
+    it("returns 404 for private comment without viewer param", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/vis-get", quote: "q", body: "secret", author: "Alice", visibility: "private" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`);
+      assert.equal(res.status, 404);
+    });
+
+    it("returns 404 for private comment when viewer is not the author", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/vis-get2", quote: "q", body: "secret", author: "Alice", visibility: "private" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}?viewer=Bob`);
+      assert.equal(res.status, 404);
+    });
+
+    it("returns private comment when viewer matches author", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/vis-get3", quote: "q", body: "secret", author: "Alice", visibility: "private" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}?viewer=Alice`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.id, cmt.id);
+      assert.equal(json.visibility, "private");
+    });
   });
 
   describe("PATCH /comments/:id", () => {

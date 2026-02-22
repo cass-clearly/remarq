@@ -348,7 +348,9 @@ app.get("/comments", asyncHandler(async (req, res) => {
     idx++;
   }
 
-  // Visibility filtering: show public comments + viewer's private comments
+  // Visibility filtering: show public comments + viewer's private comments.
+  // NOTE: viewer is client-supplied and unauthenticated (same trust model as
+  // the author field). Private visibility is a UX convenience, not access control.
   if (viewer) {
     conditions.push(`(visibility = 'public' OR (visibility = 'private' AND author = $${idx}))`);
     params.push(viewer);
@@ -442,6 +444,15 @@ app.get("/comments/:id", asyncHandler(async (req, res) => {
   const params = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
   const { rows } = await pool.query(sql, params);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
+  // Enforce visibility: private comments only visible to their author (via viewer param)
+  if (rows[0].visibility === "private") {
+    const { viewer } = req.query;
+    if (!viewer || viewer !== rows[0].author) {
+      return res.status(404).json(errorResponse("Comment not found"));
+    }
+  }
+
   let comment = formatComment(rows[0]);
   const reactionsMap = await fetchReactionsForComments([comment.id]);
   comment = { ...comment, reactions: reactionsMap.get(comment.id) || [] };
