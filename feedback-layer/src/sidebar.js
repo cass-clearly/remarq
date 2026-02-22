@@ -28,6 +28,7 @@ let _onEdit = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
+let _stylesInjected = false;
 
 export function getCommenter() {
   return localStorage.getItem(COMMENTER_KEY) || "";
@@ -50,7 +51,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
   _onReply = onReply;
   _onEdit = onEdit;
 
-  injectStyles();
+  ensureStyles();
 
   _sidebar = document.createElement("div");
   _sidebar.className = "fb-sidebar fb-sidebar-collapsed";
@@ -81,13 +82,6 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
     </div>
   `;
 
-  // Floating tab to reopen sidebar when closed
-  const tab = document.createElement("button");
-  tab.className = "fb-sidebar-tab";
-  tab.textContent = "Feedback";
-  tab.addEventListener("click", () => openSidebar());
-  document.body.appendChild(tab);
-
   document.body.appendChild(_sidebar);
 
   // Toast container (lives inside the sidebar so it scrolls with it)
@@ -116,6 +110,18 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+}
+
+/**
+ * Create the floating "Feedback" tab eagerly so users can open the sidebar.
+ * @param {Function} onOpen - Called when tab is clicked (should init sidebar + open it)
+ */
+export function createSidebarTab(onOpen) {
+  const tab = document.createElement("button");
+  tab.className = "fb-sidebar-tab";
+  tab.textContent = "Feedback";
+  tab.addEventListener("click", () => onOpen());
+  document.body.appendChild(tab);
 }
 
 export function openSidebar() {
@@ -432,7 +438,16 @@ export function focusCommentCard(commentId) {
   }
 }
 
-function injectStyles() {
+/**
+ * Inject CSS styles. Safe to call multiple times — only injects once.
+ */
+export function ensureStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
+  _injectStyles();
+}
+
+function _injectStyles() {
   const style = document.createElement("style");
   style.textContent = `
     .fb-sidebar {

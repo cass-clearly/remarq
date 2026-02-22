@@ -26,6 +26,8 @@ import {
 } from "./highlights.js";
 import {
   createSidebar,
+  createSidebarTab,
+  ensureStyles,
   showCommentForm,
   renderComments,
   focusCommentCard,
@@ -94,6 +96,15 @@ function init() {
       _root = document.querySelector(config.contentSelector) || document.body;
       _docUri = config.documentUri || window.location.origin + window.location.pathname;
       _docId = config.documentId || null;
+
+      // Inject styles eagerly so the tooltip and tab render correctly
+      ensureStyles();
+
+      // Show the "Feedback" tab immediately — clicking it lazy-inits the sidebar
+      createSidebarTab(() => {
+        ensureSidebarInitialized();
+        openSidebar();
+      });
 
       // Highlight click → scroll sidebar to card
       setHighlightClickHandler((id) => {
