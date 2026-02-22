@@ -101,6 +101,20 @@ async function initSchema() {
   // Add visibility column for private annotations (idempotent)
   await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS visibility VARCHAR(10) DEFAULT 'public'`);
 
+  // Add edited_at column to track when a comment body was last edited (idempotent)
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ DEFAULT NULL`);
+
+  // Comment edit history: stores previous versions of comment bodies
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS comment_history (
+      id         SERIAL PRIMARY KEY,
+      comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      body       TEXT NOT NULL,
+      edited_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      edited_by  TEXT NOT NULL
+    )
+  `);
+
   // Drop the original single-column UNIQUE on uri so that different tenants
   // can annotate the same URI independently.  The two partial indexes below
   // replace it: one for self-hosted (api_key IS NULL) and one per-tenant.
@@ -152,6 +166,7 @@ function formatComment(row) {
     parent: row.parent || null,
     sort_order: row.sort_order != null ? row.sort_order : null,
     visibility: row.visibility || "public",
+    edited_at: row.edited_at instanceof Date ? row.edited_at.toISOString() : row.edited_at || null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -491,7 +506,13 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   }
 
   if (body !== undefined) {
-    await pool.query("UPDATE comments SET body = $1 WHERE id = $2", [sanitize(body), req.params.id]);
+    // Save current body to history before overwriting
+    const current = rows[0];
+    await pool.query(
+      "INSERT INTO comment_history (comment_id, body, edited_by) VALUES ($1, $2, $3)",
+      [req.params.id, current.body, current.author]
+    );
+    await pool.query("UPDATE comments SET body = $1, edited_at = NOW() WHERE id = $2", [sanitize(body), req.params.id]);
   }
   if (status !== undefined) {
     await pool.query("UPDATE comments SET status = $1 WHERE id = $2", [status, req.params.id]);
@@ -505,6 +526,27 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   res.json(formatComment(updated.rows[0]));
+}));
+
+app.get("/comments/:id/history", asyncHandler(async (req, res) => {
+  // Verify comment exists and belongs to this tenant
+  const checkSql = req.apiKey
+    ? "SELECT c.id FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key = $2"
+    : "SELECT c.id FROM comments c JOIN documents d ON c.document = d.id WHERE c.id = $1 AND d.api_key IS NULL";
+  const checkParams = req.apiKey ? [req.params.id, req.apiKey] : [req.params.id];
+  const { rows: check } = await pool.query(checkSql, checkParams);
+  if (check.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
+  const { rows } = await pool.query(
+    "SELECT body, edited_at, edited_by FROM comment_history WHERE comment_id = $1 ORDER BY edited_at ASC",
+    [req.params.id]
+  );
+
+  res.json(listResponse(rows.map(r => ({
+    body: r.body,
+    edited_at: r.edited_at instanceof Date ? r.edited_at.toISOString() : r.edited_at,
+    edited_by: r.edited_by,
+  }))));
 }));
 
 app.delete("/comments/:id", asyncHandler(async (req, res) => {

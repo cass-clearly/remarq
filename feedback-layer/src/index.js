@@ -15,7 +15,7 @@
  * dev → staging → production).
  */
 
-import { setBaseUrl, setApiKey, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus, addReaction, removeReaction, reorderComments } from "./api.js";
+import { setBaseUrl, setApiKey, fetchComments, fetchCommentHistory, createComment, updateComment, deleteComment, updateCommentStatus, addReaction, removeReaction, reorderComments } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
@@ -116,6 +116,7 @@ function init() {
         onSearch: handleSearch,
         onReaction: handleReaction,
         onReorder: handleReorder,
+        onFetchHistory: (id) => fetchCommentHistory(id),
       });
 
       // Restore sort mode from localStorage

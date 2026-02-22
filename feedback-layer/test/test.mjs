@@ -327,6 +327,62 @@ describe("debounce", async () => {
   });
 });
 
+// ── inlineDiff ────────────────────────────────────────────────────────
+
+describe("inlineDiff", async () => {
+  const { inlineDiff } = await import("../src/utils/inline-diff.js");
+
+  it("returns equal segment for identical strings", () => {
+    const result = inlineDiff("hello world", "hello world");
+    assert.equal(result.length, 1);
+    assert.equal(result[0].type, "equal");
+    assert.equal(result[0].text.trim(), "hello world");
+  });
+
+  it("detects added words", () => {
+    const result = inlineDiff("hello world", "hello beautiful world");
+    const types = result.map(s => s.type);
+    assert.ok(types.includes("add"), "should have add segments");
+    const addedText = result.filter(s => s.type === "add").map(s => s.text.trim()).join(" ");
+    assert.ok(addedText.includes("beautiful"));
+  });
+
+  it("detects removed words", () => {
+    const result = inlineDiff("hello beautiful world", "hello world");
+    const types = result.map(s => s.type);
+    assert.ok(types.includes("remove"), "should have remove segments");
+    const removedText = result.filter(s => s.type === "remove").map(s => s.text.trim()).join(" ");
+    assert.ok(removedText.includes("beautiful"));
+  });
+
+  it("detects changed words", () => {
+    const result = inlineDiff("the cat sat", "the dog sat");
+    const removes = result.filter(s => s.type === "remove");
+    const adds = result.filter(s => s.type === "add");
+    assert.ok(removes.length > 0);
+    assert.ok(adds.length > 0);
+    assert.ok(removes.some(s => s.text.trim() === "cat"));
+    assert.ok(adds.some(s => s.text.trim() === "dog"));
+  });
+
+  it("handles empty old string", () => {
+    const result = inlineDiff("", "hello");
+    assert.equal(result.length, 1);
+    assert.equal(result[0].type, "add");
+  });
+
+  it("handles empty new string", () => {
+    const result = inlineDiff("hello", "");
+    assert.equal(result.length, 1);
+    assert.equal(result[0].type, "remove");
+  });
+
+  it("handles both empty strings", () => {
+    const result = inlineDiff("", "");
+    assert.equal(result.length, 0);
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {
