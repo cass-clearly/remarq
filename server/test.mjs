@@ -838,7 +838,7 @@ describe("API", async () => {
       assert.equal(res.status, 404);
     });
 
-    it("returns 404 for private comment without viewer param", async () => {
+    it("returns private comment without viewer param (opt-in filtering)", async () => {
       const cmt = await (await fetch(`${BASE}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -846,7 +846,9 @@ describe("API", async () => {
       })).json();
 
       const res = await fetch(`${BASE}/comments/${cmt.id}`);
-      assert.equal(res.status, 404);
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.visibility, "private");
     });
 
     it("returns 404 for private comment when viewer is not the author", async () => {
@@ -1610,30 +1612,6 @@ describe("API", async () => {
       assert.ok(bodies.includes("public"));
       assert.ok(bodies.includes("alice private"));
       assert.ok(!bodies.includes("bob private"));
-    });
-
-    it("GET /comments/:id returns 404 for private comment without viewer", async () => {
-      const cmt = await (await fetch(`${BASE}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uri: "https://example.com/vis-single", quote: "q", body: "secret", author: "Alice", visibility: "private" }),
-      })).json();
-
-      const res = await fetch(`${BASE}/comments/${cmt.id}`);
-      assert.equal(res.status, 404);
-    });
-
-    it("GET /comments/:id returns private comment to its author", async () => {
-      const cmt = await (await fetch(`${BASE}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uri: "https://example.com/vis-single2", quote: "q", body: "secret", author: "Alice", visibility: "private" }),
-      })).json();
-
-      const res = await fetch(`${BASE}/comments/${cmt.id}?viewer=Alice`);
-      assert.equal(res.status, 200);
-      const json = await res.json();
-      assert.equal(json.body, "secret");
     });
 
     it("private comments from other authors are invisible", async () => {

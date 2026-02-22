@@ -444,12 +444,12 @@ app.get("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query(sql, params);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
 
-  // Enforce visibility: private comments only visible to their author (via viewer param)
-  if (rows[0].visibility === "private") {
-    const { viewer } = req.query;
-    if (!viewer || viewer !== rows[0].author) {
-      return res.status(404).json(errorResponse("Comment not found"));
-    }
+  // Visibility filtering: when viewer is provided, hide private comments from
+  // other authors. Without viewer, all comments are returned (opt-in, consistent
+  // with GET /comments list endpoint).
+  const { viewer } = req.query;
+  if (viewer && rows[0].visibility === "private" && rows[0].author !== viewer) {
+    return res.status(404).json(errorResponse("Comment not found"));
   }
 
   let comment = formatComment(rows[0]);
