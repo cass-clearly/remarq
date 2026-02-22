@@ -38,16 +38,6 @@ let _lastAnchoredIds = new Set();
 let _lastMatchedIds = null;
 let _stylesInjected = false;
 
-/**
- * Inject CSS styles eagerly (before sidebar DOM is created).
- * Safe to call multiple times — only injects once.
- */
-export function ensureStyles() {
-  if (_stylesInjected) return;
-  _stylesInjected = true;
-  injectStyles();
-}
-
 export function getCommenter() {
   return localStorage.getItem(COMMENTER_KEY) || "";
 }
@@ -115,13 +105,6 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
     </div>
   `;
 
-  // Floating tab to reopen sidebar when closed
-  const tab = document.createElement("button");
-  tab.className = "fb-sidebar-tab";
-  tab.textContent = "Feedback";
-  tab.addEventListener("click", () => openSidebar());
-  document.body.appendChild(tab);
-
   document.body.appendChild(_sidebar);
 
   // Toast container (lives inside the sidebar so it scrolls with it)
@@ -183,6 +166,18 @@ export function setSortMode(mode) {
     toggle.querySelector(".fb-sort-label").textContent = mode === "custom" ? "Custom order" : "Doc order";
     toggle.classList.toggle("fb-sort-toggle-active", mode === "custom");
   }
+}
+
+/**
+ * Create the floating "Feedback" tab eagerly so users can open the sidebar.
+ * @param {Function} onOpen - Called when tab is clicked (should init sidebar + open it)
+ */
+export function createSidebarTab(onOpen) {
+  const tab = document.createElement("button");
+  tab.className = "fb-sidebar-tab";
+  tab.textContent = "Feedback";
+  tab.addEventListener("click", () => onOpen());
+  document.body.appendChild(tab);
 }
 
 export function openSidebar() {
@@ -696,7 +691,16 @@ export function focusCommentCard(commentId) {
   }
 }
 
-function injectStyles() {
+/**
+ * Inject CSS styles. Safe to call multiple times — only injects once.
+ */
+export function ensureStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
+  _injectStyles();
+}
+
+function _injectStyles() {
   const style = document.createElement("style");
   style.textContent = `
     /* ── Light theme variables (default) ── */
