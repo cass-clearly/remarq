@@ -348,15 +348,14 @@ app.get("/comments", asyncHandler(async (req, res) => {
     idx++;
   }
 
-  // Visibility filtering: show public comments + viewer's private comments.
+  // Visibility filtering: when a viewer is provided, hide other users' private
+  // comments. Without a viewer param all comments are returned (opt-in filter).
   // NOTE: viewer is client-supplied and unauthenticated (same trust model as
   // the author field). Private visibility is a UX convenience, not access control.
   if (viewer) {
     conditions.push(`(visibility = 'public' OR (visibility = 'private' AND author = $${idx}))`);
     params.push(viewer);
     idx++;
-  } else {
-    conditions.push(`visibility = 'public'`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
