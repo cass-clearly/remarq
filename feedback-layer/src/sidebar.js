@@ -11,6 +11,7 @@ import { escapeHtml } from "./utils/escape-html.js";
 import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
+import { inlineDiff } from "./utils/inline-diff.js";
 import { initToastContainer } from "./toast.js";
 import { debounce } from "./utils/debounce.js";
 import { recalculateSortOrder } from "./utils/reorder.js";
@@ -30,6 +31,7 @@ let _onEdit = null;
 let _onSearch = null;
 let _onReaction = null;
 let _onReorder = null;
+let _onFetchHistory = null;
 let _showResolved = false;
 let _sortMode = "document"; // "document" or "custom"
 let _draggedId = null;
@@ -63,8 +65,9 @@ export function getCommenter() {
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  * @param {Function} opts.onReorder - Called with [{id, sortOrder}] when comments are reordered
+ * @param {Function} opts.onFetchHistory - Called with (commentId) to fetch edit history
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onSearch, onReaction, onReorder }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onSearch, onReaction, onReorder, onFetchHistory }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
@@ -73,6 +76,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   _onSearch = onSearch;
   _onReaction = onReaction;
   _onReorder = onReorder;
+  _onFetchHistory = onFetchHistory;
 
   ensureStyles();
 

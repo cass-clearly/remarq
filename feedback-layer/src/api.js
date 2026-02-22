@@ -73,6 +73,15 @@ export async function createComment({
   return res.json();
 }
 
+export async function fetchCommentHistory(id) {
+  const res = await fetch(`${_baseUrl}/comments/${id}/history`, {
+    headers: authHeaders(),
+  });
+  await throwIfNotOk(res, "Failed to fetch comment history");
+  const json = await res.json();
+  return json.data;
+}
+
 export async function updateComment(id, fields) {
   const payload = {};
   if (fields.body !== undefined) payload.body = fields.body;

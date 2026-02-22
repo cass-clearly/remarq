@@ -1044,6 +1044,127 @@ describe("API", async () => {
     });
   });
 
+  describe("PATCH /comments/:id body edit history", () => {
+    it("sets edited_at when body is updated", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist1", quote: "q", body: "original", author: "Alice" }),
+      })).json();
+      assert.equal(cmt.edited_at, null);
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "updated" }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.body, "updated");
+      assert.ok(json.edited_at, "edited_at should be set after body update");
+    });
+
+    it("does not set edited_at for non-body updates", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist2", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+      const json = await res.json();
+      assert.equal(json.edited_at, null);
+    });
+
+    it("saves previous body to history on update", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist3", quote: "q", body: "v1", author: "Alice" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "v2" }),
+      });
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/history`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.object, "list");
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].body, "v1");
+      assert.equal(json.data[0].edited_by, "Alice");
+      assert.ok(json.data[0].edited_at);
+    });
+
+    it("accumulates multiple history entries", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist4", quote: "q", body: "v1", author: "Alice" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "v2" }),
+      });
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "v3" }),
+      });
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/history`);
+      const json = await res.json();
+      assert.equal(json.data.length, 2);
+      assert.equal(json.data[0].body, "v1");
+      assert.equal(json.data[1].body, "v2");
+    });
+
+    it("returns empty history for unedited comment", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist5", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/history`);
+      const json = await res.json();
+      assert.equal(json.data.length, 0);
+    });
+
+    it("returns 404 for nonexistent comment history", async () => {
+      const res = await fetch(`${BASE}/comments/cmt_nonexistent/history`);
+      assert.equal(res.status, 404);
+    });
+
+    it("deletes history when comment is deleted (cascade)", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/hist6", quote: "q", body: "v1", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "v2" }),
+      });
+
+      await fetch(`${BASE}/comments/${cmt.id}`, { method: "DELETE" });
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}/history`);
+      assert.equal(res.status, 404);
+    });
+  });
+
   describe("POST /comments/reorder", () => {
     it("batch updates sort_order for multiple comments", async () => {
       const uri = "https://example.com/reorder-batch";
