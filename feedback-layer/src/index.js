@@ -15,7 +15,7 @@
  * dev → staging → production).
  */
 
-import { setBaseUrl, setApiKey, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus, addReaction, removeReaction, reorderComments } from "./api.js";
+import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
@@ -23,7 +23,6 @@ import {
   removeAllHighlights,
   setHighlightClickHandler,
   setActiveHighlight,
-  setDimmedHighlights,
 } from "./highlights.js";
 import {
   createSidebar,
@@ -32,9 +31,6 @@ import {
   focusCommentCard,
   openSidebar,
   getCommenter,
-  setAuthors,
-  setSortMode,
-  getSortMode,
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
@@ -47,8 +43,6 @@ let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
 let _anchoredIds = new Set();  // Track successfully anchored comments
 let _commentRanges = new Map();  // Map comment ID to its range for position sorting
-let _matchedIds = null;  // Set of IDs matching active search, or null if no search
-const SORT_MODE_KEY = "remarq-sort-mode-";
 
 function init() {
   const scriptTag =
@@ -62,12 +56,9 @@ function init() {
     documentId: scriptTag?.dataset.documentId || null,
     proxyUrl: scriptTag?.dataset.proxyUrl || null,
     model: scriptTag?.dataset.model || null,
-    theme: scriptTag?.dataset.theme || "auto",
-    apiKey: scriptTag?.dataset.apiKey || null,
   };
 
   setBaseUrl(config.apiUrl);
-  if (config.apiKey) setApiKey(config.apiKey);
 
   /**
    * Wait for Mermaid diagrams to finish rendering.
@@ -103,9 +94,6 @@ function init() {
       _docUri = config.documentUri || window.location.origin + window.location.pathname;
       _docId = config.documentId || null;
 
-      // Set theme attribute on <html> for CSS variable scoping
-      document.documentElement.dataset.remarqTheme = config.theme;
-
       // Sidebar
       createSidebar({
         onSubmit: handleCommentSubmit,
@@ -113,17 +101,7 @@ function init() {
         onResolve: handleResolve,
         onReply: handleReply,
         onEdit: handleEdit,
-        onSearch: handleSearch,
-        onReaction: handleReaction,
-        onReorder: handleReorder,
       });
-
-      // Restore sort mode from localStorage
-      const docKey = _docId || _docUri;
-      const savedSortMode = localStorage.getItem(SORT_MODE_KEY + docKey);
-      if (savedSortMode === "custom") {
-        setSortMode("custom");
-      }
 
       // Highlight click → scroll sidebar to card
       setHighlightClickHandler((id) => {
@@ -157,21 +135,14 @@ function init() {
 
 async function loadComments() {
   try {
-    const viewer = getCommenter() || undefined;
-    _comments = await fetchComments(_docUri, _docId, { viewer });
+    _comments = await fetchComments(_docUri, _docId);
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
-    updateAuthors();
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
     showToast(`Failed to load comments: ${err.message}`, "error");
   }
-}
-
-function updateAuthors() {
-  const authors = [...new Set(_comments.map(c => c.author))];
-  setAuthors(authors);
 }
 
 async function anchorAll(comments) {
@@ -192,7 +163,7 @@ async function anchorAll(comments) {
       );
 
       if (range && ann.status !== 'closed') {
-        highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
+        highlightRange(range, ann.id);
         anchored.add(ann.id);
         _commentRanges.set(ann.id, range);
       } else if (range && ann.status === 'closed') {
@@ -211,7 +182,6 @@ async function anchorAll(comments) {
 function setupSelectionListener() {
   document.addEventListener("mouseup", onSelectionChange);
   document.addEventListener("keyup", onSelectionChange);
-  document.addEventListener("touchend", onSelectionChange);
 }
 
 function onSelectionChange() {
@@ -247,11 +217,11 @@ function showTooltip(range) {
   _tooltip = document.createElement("button");
   _tooltip.className = "fb-annotate-tooltip";
   _tooltip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>Comment';
-  _tooltip.style.top = window.scrollY + rect.bottom + 8 + "px";
+  _tooltip.style.top = window.scrollY + rect.top - 36 + "px";
   _tooltip.style.left =
     window.scrollX + rect.left + rect.width / 2 - 40 + "px";
 
-  const handleTooltipActivate = async (e) => {
+  _tooltip.addEventListener("mousedown", async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -267,10 +237,7 @@ function showTooltip(range) {
     }
 
     removeTooltip();
-  };
-
-  _tooltip.addEventListener("mousedown", handleTooltipActivate);
-  _tooltip.addEventListener("touchstart", handleTooltipActivate);
+  });
 
   document.body.appendChild(_tooltip);
 }
@@ -282,33 +249,7 @@ function removeTooltip() {
   }
 }
 
-async function handleSearch(search, author) {
-  if (!search && !author) {
-    _matchedIds = null;
-    renderComments(_comments, _anchoredIds, _commentRanges, null);
-    setDimmedHighlights(new Set());
-    return;
-  }
-
-  try {
-    const viewer = getCommenter() || undefined;
-    const filtered = await fetchComments(_docUri, _docId, { search, author, viewer });
-    _matchedIds = new Set(filtered.map(c => c.id));
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
-
-    const dimmedIds = new Set();
-    for (const c of _comments) {
-      if (!c.parent && _anchoredIds.has(c.id) && !_matchedIds.has(c.id)) {
-        dimmedIds.add(c.id);
-      }
-    }
-    setDimmedHighlights(dimmedIds);
-  } catch (err) {
-    console.error("[feedback-layer] Search failed:", err);
-  }
-}
-
-async function handleCommentSubmit({ comment, commenter, visibility }) {
+async function handleCommentSubmit({ comment, commenter }) {
   if (!_pendingSelector) return;
 
   try {
@@ -320,7 +261,6 @@ async function handleCommentSubmit({ comment, commenter, visibility }) {
       suffix: _pendingSelector.suffix,
       body: comment,
       author: commenter,
-      visibility,
     });
 
     _comments.push(ann);
@@ -331,12 +271,11 @@ async function handleCommentSubmit({ comment, commenter, visibility }) {
       _root
     );
     if (range) {
-      highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
+      highlightRange(range, ann.id);
       _anchoredIds.add(ann.id);
     }
 
-    updateAuthors();
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
 
     // Clear selection
     window.getSelection().removeAllRanges();
@@ -365,7 +304,7 @@ async function handleResolve(commentId, resolved) {
         _root
       );
       if (range) {
-        highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
+        highlightRange(range, ann.id);
         _anchoredIds.add(ann.id);
       } else {
         // Text no longer exists, remove from anchored set
@@ -373,7 +312,7 @@ async function handleResolve(commentId, resolved) {
       }
     }
 
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to resolve comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
@@ -390,8 +329,7 @@ async function handleReply({ parent_id, comment, commenter }) {
       parent: parent_id,
     });
     _comments.push(reply);
-    updateAuthors();
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to create reply:", err);
     showToast(`Failed to save reply: ${err.message}`, "error");
@@ -403,63 +341,10 @@ async function handleEdit(commentId, comment) {
     const updated = await updateComment(commentId, { body: comment });
     const idx = _comments.findIndex((a) => a.id === commentId);
     if (idx !== -1) _comments[idx] = updated;
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
-  }
-}
-
-async function handleReaction(commentId, emoji) {
-  const commenter = getCommenter();
-  if (!commenter) return;
-
-  try {
-    const comment = _comments.find((c) => c.id === commentId);
-    const existing = comment?.reactions?.find((r) => r.emoji === emoji);
-    const alreadyReacted = existing?.authors.includes(commenter);
-
-    let result;
-    if (alreadyReacted) {
-      result = await removeReaction(commentId, emoji, commenter);
-    } else {
-      result = await addReaction(commentId, emoji, commenter);
-    }
-
-    // Update local comment's reactions
-    const idx = _comments.findIndex((c) => c.id === commentId);
-    if (idx !== -1) _comments[idx] = { ..._comments[idx], reactions: result.reactions };
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
-  } catch (err) {
-    console.error("[feedback-layer] Failed to toggle reaction:", err);
-    showToast(`Failed to update reaction: ${err.message}`, "error");
-  }
-}
-
-async function handleReorder(updates) {
-  const docKey = _docId || _docUri;
-
-  // null means sort mode toggle was clicked — just save preference and re-render
-  if (updates === null) {
-    localStorage.setItem(SORT_MODE_KEY + docKey, getSortMode());
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
-    return;
-  }
-
-  // Optimistic UI update
-  for (const u of updates) {
-    const idx = _comments.findIndex((c) => c.id === u.id);
-    if (idx !== -1) _comments[idx] = { ..._comments[idx], sort_order: u.sortOrder };
-  }
-  renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
-
-  try {
-    await reorderComments(updates);
-  } catch (err) {
-    console.error("[feedback-layer] Failed to reorder comments:", err);
-    showToast(`Failed to reorder: ${err.message}`, "error");
-    // Reload to revert
-    loadComments();
   }
 }
 
@@ -471,8 +356,7 @@ async function handleDelete(commentId) {
     _comments = _comments.filter(
       (a) => a.id !== commentId && a.parent !== commentId
     );
-    updateAuthors();
-    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+    renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to delete comment:", err);
     showToast(`Failed to delete comment: ${err.message}`, "error");
