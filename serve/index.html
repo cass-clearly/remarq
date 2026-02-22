@@ -37,6 +37,28 @@
       padding: 20px;
       margin: 2em 0;
     }
+    #remarq-demo-banner {
+      display: none;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: #fff;
+      padding: 12px 20px;
+      text-align: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 0.95em;
+      line-height: 1.5;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10000;
+    }
+    #remarq-demo-banner a {
+      color: #e0d5f5;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+    #remarq-demo-banner a:hover { color: #fff; }
+    body.remarq-demo-active { padding-top: 50px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>
@@ -55,6 +77,11 @@
   </script>
 </head>
 <body>
+
+<div id="remarq-demo-banner">
+  <strong>Remarq Demo</strong> — Select any text below to try the annotation layer.
+  <a href="https://github.com/cass-clearly/remarq">View on GitHub</a>
+</div>
 
 <article>
   <h1>The Future of Collaborative Document Editing</h1>
@@ -356,13 +383,39 @@ journey
   ============================
   - data-api-url: Points to the annotation backend server
   - data-content-selector: CSS selector for the annotatable content
+  - Demo mode: activated on demo.remarq.dev or with ?demo query parameter.
+    Each browser session gets an isolated sandbox (unique document URI).
 
   Add ?author=true to the URL to show the "Send Feedback to Claude" button.
 -->
-<script
-  src="/feedback-layer.js"
-  data-content-selector="article"
-></script>
+<script>
+(function() {
+  var isDemo = location.hostname === 'demo.remarq.dev' ||
+               new URLSearchParams(location.search).has('demo');
+
+  if (isDemo) {
+    document.getElementById('remarq-demo-banner').style.display = 'block';
+    document.body.classList.add('remarq-demo-active');
+  }
+
+  var script = document.createElement('script');
+  script.src = '/feedback-layer.js';
+  script.dataset.contentSelector = 'article';
+
+  if (isDemo) {
+    // Sandbox isolation: each session gets a unique document URI
+    // so demo users don't see each other's annotations.
+    var sessionId = sessionStorage.getItem('remarq-demo-session');
+    if (!sessionId) {
+      sessionId = 'demo-' + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem('remarq-demo-session', sessionId);
+    }
+    script.dataset.documentUri = 'https://demo.remarq.dev/' + sessionId;
+  }
+
+  document.body.appendChild(script);
+})();
+</script>
 
 </body>
 </html>

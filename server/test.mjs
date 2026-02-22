@@ -1948,7 +1948,7 @@ describe("Multi-tenant API", async () => {
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
     await pool.query("DELETE FROM api_keys WHERE key IN ($1, $2)", [KEY_A, KEY_B]);
-    await pool.end();
+    // Don't end pool here — shared with demo-cleanup suite below
   });
 
   beforeEach(async () => {
@@ -2322,5 +2322,144 @@ describe("Multi-tenant API", async () => {
       const json = await check.json();
       assert.equal(json.reactions.length, 1);
     });
+  });
+});
+
+// ── Demo cleanup tests ────────────────────────────────────────────────
+
+describe("demo-cleanup", async () => {
+  const { cleanupDemoComments } = await import("./demo-cleanup.js");
+  const { pool, initSchema } = await import("./index.js");
+  const { insertWithId } = await import("./generate-id.js");
+
+  before(async () => {
+    await initSchema();
+  });
+
+  after(async () => {
+    await pool.query("DELETE FROM reactions");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+    await pool.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM reactions");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
+    await pool.query("DELETE FROM comments");
+    await pool.query("DELETE FROM documents");
+  });
+
+  async function createOldComment(hoursAgo) {
+    const createdAt = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+    const doc = await insertWithId("doc", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO documents (id, uri) VALUES ($1, $2) RETURNING *",
+        [id, `https://example.com/demo-${id}`]
+      );
+      return rows[0];
+    });
+    const cmt = await insertWithId("cmt", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO comments (id, document, quote, body, author, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+        [id, doc.id, "quoted text", "test comment", "tester", createdAt]
+      );
+      return rows[0];
+    });
+    return { doc, cmt };
+  }
+
+  it("deletes comments older than TTL", async () => {
+    await createOldComment(25); // 25 hours old (expired at 24h TTL)
+    await createOldComment(1);  // 1 hour old (fresh)
+
+    const result = await cleanupDemoComments(pool, 24);
+    assert.equal(result.commentsRemoved, 1);
+
+    const { rows } = await pool.query("SELECT * FROM comments");
+    assert.equal(rows.length, 1);
+  });
+
+  it("deletes replies of expired parent comments", async () => {
+    const { cmt } = await createOldComment(25);
+    // Add a reply (even if recent, it should be deleted with the parent)
+    await insertWithId("cmt", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO comments (id, document, body, author, parent) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [id, cmt.document, "reply", "replier", cmt.id]
+      );
+      return rows[0];
+    });
+
+    const result = await cleanupDemoComments(pool, 24);
+    assert.equal(result.commentsRemoved, 1);
+
+    const { rows } = await pool.query("SELECT * FROM comments");
+    assert.equal(rows.length, 0); // both parent and reply gone
+  });
+
+  it("cleans up orphaned documents", async () => {
+    await createOldComment(25);
+
+    const result = await cleanupDemoComments(pool, 24);
+    assert.equal(result.documentsRemoved, 1);
+
+    const { rows } = await pool.query("SELECT * FROM documents");
+    assert.equal(rows.length, 0);
+  });
+
+  it("keeps documents that still have comments", async () => {
+    // Create a document with both old and fresh comments
+    const createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const doc = await insertWithId("doc", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO documents (id, uri) VALUES ($1, $2) RETURNING *",
+        [id, "https://example.com/mixed"]
+      );
+      return rows[0];
+    });
+    // Old comment
+    await insertWithId("cmt", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO comments (id, document, quote, body, author, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+        [id, doc.id, "old", "old comment", "tester", createdAt]
+      );
+      return rows[0];
+    });
+    // Fresh comment
+    await insertWithId("cmt", async (id) => {
+      const { rows } = await pool.query(
+        "INSERT INTO comments (id, document, quote, body, author) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [id, doc.id, "fresh", "fresh comment", "tester"]
+      );
+      return rows[0];
+    });
+
+    await cleanupDemoComments(pool, 24);
+
+    const { rows: docs } = await pool.query("SELECT * FROM documents");
+    assert.equal(docs.length, 1); // document preserved
+    const { rows: cmts } = await pool.query("SELECT * FROM comments");
+    assert.equal(cmts.length, 1); // only fresh comment remains
+  });
+
+  it("returns zero counts when nothing to clean", async () => {
+    const result = await cleanupDemoComments(pool, 24);
+    assert.equal(result.commentsRemoved, 0);
+    assert.equal(result.documentsRemoved, 0);
+  });
+
+  it("cascades reaction deletion with comment", async () => {
+    const { cmt } = await createOldComment(25);
+    await pool.query(
+      "INSERT INTO reactions (comment_id, author, emoji) VALUES ($1, $2, $3)",
+      [cmt.id, "reactor", "👍"]
+    );
+
+    await cleanupDemoComments(pool, 24);
+
+    const { rows } = await pool.query("SELECT * FROM reactions");
+    assert.equal(rows.length, 0);
   });
 });
