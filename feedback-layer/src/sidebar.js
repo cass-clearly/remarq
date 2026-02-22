@@ -12,6 +12,7 @@ import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
+import { getFocusableElements, wrapIndex } from "./utils/keyboard-nav.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -29,7 +30,8 @@ let _onReaction = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
-let _lastMatchedIds = null;
+let _activeThreadIndex = -1;
+let _keydownHandler = null;
 let _stylesInjected = false;
 
 /**
@@ -69,6 +71,8 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
 
   _sidebar = document.createElement("div");
   _sidebar.className = "fb-sidebar fb-sidebar-collapsed";
+  _sidebar.setAttribute("role", "complementary");
+  _sidebar.setAttribute("aria-label", "Feedback sidebar");
   _sidebar.innerHTML = `
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
@@ -109,6 +113,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   initToastContainer(_sidebar);
 
   _listEl = _sidebar.querySelector(".fb-comment-list");
+  _listEl.setAttribute("role", "list");
   _formEl = _sidebar.querySelector(".fb-form-section");
 
   // Name input
@@ -136,11 +141,110 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
 export function openSidebar() {
   _sidebar.classList.remove("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.add("fb-sidebar-tab-hidden");
+  _attachKeyboardHandler();
+  // Focus first thread card if available
+  const firstCard = _listEl?.querySelector(".fb-thread .fb-cmt-card");
+  if (firstCard) {
+    _setActiveThread(0);
+  }
 }
 
-function closeSidebar() {
+export function closeSidebar() {
   _sidebar.classList.add("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.remove("fb-sidebar-tab-hidden");
+  _detachKeyboardHandler();
+  _activeThreadIndex = -1;
+  document.body.focus();
+}
+
+function _isInputFocused() {
+  const tag = document.activeElement?.tagName;
+  return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT";
+}
+
+function _getThreadCards() {
+  if (!_listEl) return [];
+  return Array.from(_listEl.querySelectorAll(".fb-thread > .fb-cmt-card"));
+}
+
+function _setActiveThread(index) {
+  const cards = _getThreadCards();
+  if (cards.length === 0) return;
+  index = wrapIndex(index, cards.length);
+  _activeThreadIndex = index;
+
+  // Clear existing active
+  _listEl.querySelectorAll(".fb-cmt-card").forEach((c) => c.classList.remove("fb-cmt-active"));
+  const card = cards[index];
+  card.classList.add("fb-cmt-active");
+  card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Also activate the highlight in the document
+  const thread = card.closest(".fb-thread");
+  if (thread?.dataset.commentId) {
+    setActiveHighlight(thread.dataset.commentId);
+    scrollToHighlight(thread.dataset.commentId);
+  }
+}
+
+function _handleSidebarKeydown(e) {
+  // Skip when typing in an input
+  if (_isInputFocused()) return;
+
+  const key = e.key;
+
+  if (key === "Escape") {
+    e.preventDefault();
+    closeSidebar();
+    return;
+  }
+
+  if (key === "Tab") {
+    // Trap focus within sidebar
+    const focusable = getFocusableElements(_sidebar);
+    if (focusable.length === 0) return;
+    const currentIndex = focusable.indexOf(document.activeElement);
+    let nextIndex;
+    if (e.shiftKey) {
+      nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+    } else {
+      nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+    }
+    e.preventDefault();
+    focusable[nextIndex].focus();
+    return;
+  }
+
+  if (key === "ArrowDown" || key === "j") {
+    e.preventDefault();
+    const cards = _getThreadCards();
+    if (cards.length === 0) return;
+    const next = _activeThreadIndex < 0 ? 0 : _activeThreadIndex + 1;
+    _setActiveThread(next);
+    return;
+  }
+
+  if (key === "ArrowUp" || key === "k") {
+    e.preventDefault();
+    const cards = _getThreadCards();
+    if (cards.length === 0) return;
+    const prev = _activeThreadIndex < 0 ? cards.length - 1 : _activeThreadIndex - 1;
+    _setActiveThread(prev);
+    return;
+  }
+}
+
+function _attachKeyboardHandler() {
+  _detachKeyboardHandler();
+  _keydownHandler = _handleSidebarKeydown;
+  _sidebar.addEventListener("keydown", _keydownHandler);
+}
+
+function _detachKeyboardHandler() {
+  if (_keydownHandler) {
+    _sidebar.removeEventListener("keydown", _keydownHandler);
+    _keydownHandler = null;
+  }
 }
 
 /**
@@ -213,7 +317,8 @@ export function showCommentForm(quote) {
  */
 export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map()) {
   _lastComments = comments;
-  _lastAnchoredIds = anchoredIds;  // Store for later use
+  _lastAnchoredIds = anchoredIds;
+  _activeThreadIndex = -1;
   _listEl.innerHTML = "";
 
   const { topLevel, repliesByParent } = threadComments(comments);
@@ -270,6 +375,9 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   for (const ann of visibleTopLevel) {
     const thread = document.createElement("div");
     thread.className = "fb-thread";
+    thread.setAttribute("role", "listitem");
+    thread.setAttribute("tabindex", "0");
+    thread.dataset.commentId = ann.id;
 
     thread.appendChild(buildCard(ann, false));
 
