@@ -182,6 +182,7 @@ async function anchorAll(comments) {
 function setupSelectionListener() {
   document.addEventListener("mouseup", onSelectionChange);
   document.addEventListener("keyup", onSelectionChange);
+  document.addEventListener("touchend", onSelectionChange);
 }
 
 function onSelectionChange() {
@@ -217,11 +218,11 @@ function showTooltip(range) {
   _tooltip = document.createElement("button");
   _tooltip.className = "fb-annotate-tooltip";
   _tooltip.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>Comment';
-  _tooltip.style.top = window.scrollY + rect.top - 36 + "px";
+  _tooltip.style.top = window.scrollY + rect.bottom + 8 + "px";
   _tooltip.style.left =
     window.scrollX + rect.left + rect.width / 2 - 40 + "px";
 
-  _tooltip.addEventListener("mousedown", async (e) => {
+  const handleTooltipActivate = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -237,7 +238,10 @@ function showTooltip(range) {
     }
 
     removeTooltip();
-  });
+  };
+
+  _tooltip.addEventListener("mousedown", handleTooltipActivate);
+  _tooltip.addEventListener("touchstart", handleTooltipActivate);
 
   document.body.appendChild(_tooltip);
 }
