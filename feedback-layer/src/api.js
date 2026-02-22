@@ -58,7 +58,7 @@ export async function createComment({
   visibility,
 }) {
   const payload = { quote, prefix, suffix, body, author, parent };
-  if (visibility) payload.visibility = visibility;
+  if (visibility !== undefined) payload.visibility = visibility;
   if (document) {
     payload.document = document;
   } else {
