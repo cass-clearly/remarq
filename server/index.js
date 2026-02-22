@@ -10,6 +10,7 @@ const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
 const { createAdminRouter } = require("./routes/admin.js");
 const { createTenantMiddleware } = require("./middleware/tenant.js");
+const { startDemoCleanup } = require("./demo-cleanup.js");
 const path = require("path");
 
 const app = express();
@@ -637,6 +638,11 @@ async function start(options = {}) {
   const port = options.port !== undefined ? options.port : (process.env.PORT || 3333);
   const host = options.host || "0.0.0.0";
   await initSchema();
+
+  if (process.env.DEMO_MODE === "true") {
+    startDemoCleanup(pool);
+  }
+
   return new Promise((resolve) => {
     const server = app.listen(port, host, () => {
       console.log(`Remarq server listening on http://localhost:${port}`);
