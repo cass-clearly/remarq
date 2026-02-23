@@ -1275,7 +1275,7 @@ function injectStyles() {
       box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
     }
     .fb-thread-dimmed {
-      opacity: 0.35;
+      display: none;
     }
     .fb-filter-toggle {
       display: flex;
