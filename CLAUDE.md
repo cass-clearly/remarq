@@ -48,10 +48,6 @@ If the review agent requests changes, fix them on the same branch, push, and re-
 ```
 gh pr merge --squash --delete-branch
 ```
-  
-## Documentation
-
-All functional changes (new features, changed behavior, new keyboard shortcuts, configuration options) must be documented in README.md before the PR is opened.
 
 ## Testing & Coverage
 
