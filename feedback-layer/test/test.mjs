@@ -280,3 +280,48 @@ describe("api", async () => {
     setBaseUrl("");
   });
 });
+
+// ── websocket ────────────────────────────────────────────────────────
+
+describe("buildWsUrl", async () => {
+  const { buildWsUrl } = await import("../src/websocket.js");
+
+  it("converts http to ws", () => {
+    assert.equal(buildWsUrl("http://localhost:3333"), "ws://localhost:3333/ws");
+  });
+
+  it("converts https to wss", () => {
+    assert.equal(buildWsUrl("https://example.com"), "wss://example.com/ws");
+  });
+
+  it("strips trailing slashes", () => {
+    assert.equal(buildWsUrl("http://localhost:3333/"), "ws://localhost:3333/ws");
+  });
+
+  it("strips multiple trailing slashes", () => {
+    assert.equal(buildWsUrl("http://localhost:3333///"), "ws://localhost:3333/ws");
+  });
+});
+
+describe("getReconnectDelay", async () => {
+  const { getReconnectDelay } = await import("../src/websocket.js");
+
+  it("returns a positive number", () => {
+    const delay = getReconnectDelay(0);
+    assert.ok(delay > 0);
+  });
+
+  it("increases with attempt number", () => {
+    // Run multiple samples to check the general trend
+    const delays0 = Array.from({ length: 20 }, () => getReconnectDelay(0));
+    const delays5 = Array.from({ length: 20 }, () => getReconnectDelay(5));
+    const avg0 = delays0.reduce((a, b) => a + b) / delays0.length;
+    const avg5 = delays5.reduce((a, b) => a + b) / delays5.length;
+    assert.ok(avg5 > avg0, `avg delay at attempt 5 (${avg5}) should exceed attempt 0 (${avg0})`);
+  });
+
+  it("caps at MAX_DELAY (30000ms)", () => {
+    const delay = getReconnectDelay(100);
+    assert.ok(delay <= 45000, `delay ${delay} should be at most 1.5x MAX_DELAY`);
+  });
+});

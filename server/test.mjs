@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { WebSocket } from "ws";
 
 // ── Utility unit tests ──────────────────────────────────────────────
 
@@ -105,7 +106,8 @@ describe("sanitize", async () => {
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
-  let app, pool, initSchema, server, BASE;
+  let app, pool, initSchema, server, BASE, WS_BASE;
+  const { attachWebSocket, closeWebSocket, getSubscriptions } = await import("./websocket.js");
 
   before(async () => {
     ({ app, pool, initSchema } = await import("./index.js"));
@@ -115,12 +117,15 @@ describe("API", async () => {
       server = app.listen(0, "127.0.0.1", () => {
         const port = server.address().port;
         BASE = `http://127.0.0.1:${port}`;
+        WS_BASE = `ws://127.0.0.1:${port}/ws`;
+        attachWebSocket(server);
         resolve();
       });
     });
   });
 
   after(async () => {
+    closeWebSocket();
     server.close();
     await pool.end();
   });
@@ -1142,4 +1147,281 @@ describe("API", async () => {
       assert.equal(res.status, 404);
     });
   });
+
+  // ── WebSocket ────────────────────────────────────────────────────
+
+  /** Open a WS connection and wait for it to be ready. */
+  function openWs() {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(WS_BASE);
+      ws.on("open", () => resolve(ws));
+      ws.on("error", reject);
+    });
+  }
+
+  /** Send subscribe and wait for acknowledgement. */
+  function subscribe(ws, documentId) {
+    return new Promise((resolve) => {
+      const handler = (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.type === "subscribed" && msg.document === documentId) {
+          ws.off("message", handler);
+          resolve();
+        }
+      };
+      ws.on("message", handler);
+      ws.send(JSON.stringify({ type: "subscribe", document: documentId }));
+    });
+  }
+
+  /** Wait for the next event message (skipping "subscribed" acks). */
+  function nextEvent(ws, timeoutMs = 2000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        ws.off("message", handler);
+        reject(new Error("Timed out waiting for WebSocket event"));
+      }, timeoutMs);
+      const handler = (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.type !== "subscribed") {
+          clearTimeout(timer);
+          ws.off("message", handler);
+          resolve(msg);
+        }
+      };
+      ws.on("message", handler);
+    });
+  }
+
+  describe("WebSocket", () => {
+
+  it("connects and subscribes to a document", async () => {
+    const ws = await openWs();
+    try {
+      await subscribe(ws, "doc_test123");
+      const subs = getSubscriptions();
+      assert.equal(subs.has("doc_test123"), true);
+      assert.equal(subs.get("doc_test123").size, 1);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("cleans up subscription on close", async () => {
+    const ws = await openWs();
+    await subscribe(ws, "doc_cleanup");
+
+    assert.equal(getSubscriptions().get("doc_cleanup").size, 1);
+
+    ws.close();
+    // Wait for close to propagate
+    await new Promise((r) => setTimeout(r, 100));
+
+    const subs = getSubscriptions().get("doc_cleanup");
+    assert.ok(!subs || subs.size === 0);
+  });
+
+  it("switches subscription when subscribing to a new document", async () => {
+    const ws = await openWs();
+    try {
+      await subscribe(ws, "doc_first");
+      assert.equal(getSubscriptions().get("doc_first").size, 1);
+
+      await subscribe(ws, "doc_second");
+      const first = getSubscriptions().get("doc_first");
+      assert.ok(!first || first.size === 0);
+      assert.equal(getSubscriptions().get("doc_second").size, 1);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("rejects non-/ws upgrade paths", async () => {
+    const wsUrl = WS_BASE.replace("/ws", "/not-ws");
+    await assert.rejects(
+      () => new Promise((resolve, reject) => {
+        const ws = new WebSocket(wsUrl);
+        ws.on("open", () => { ws.close(); reject(new Error("Should not connect")); });
+        ws.on("error", reject);
+      }),
+      // Should get a connection error
+      (err) => err instanceof Error
+    );
+  });
+
+  it("broadcasts comment.created to subscribed clients", async () => {
+    // Create a document first
+    const docRes = await fetch(`${BASE}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-create" }),
+    });
+    const doc = await docRes.json();
+
+    const ws = await openWs();
+    try {
+      await subscribe(ws, doc.id);
+      const eventPromise = nextEvent(ws);
+
+      // Create a comment via REST
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "text", body: "hello ws", author: "tester" }),
+      });
+
+      const event = await eventPromise;
+      assert.equal(event.type, "comment.created");
+      assert.equal(event.comment.body, "hello ws");
+      assert.equal(event.comment.document, doc.id);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("broadcasts comment.updated on PATCH", async () => {
+    const cmt = await (await fetch(`${BASE}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-update", quote: "q", body: "original", author: "a" }),
+    })).json();
+
+    const ws = await openWs();
+    try {
+      await subscribe(ws, cmt.document);
+      const eventPromise = nextEvent(ws);
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "updated body" }),
+      });
+
+      const event = await eventPromise;
+      assert.equal(event.type, "comment.updated");
+      assert.equal(event.comment.body, "updated body");
+      assert.equal(event.comment.id, cmt.id);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("broadcasts comment.updated on status change", async () => {
+    const cmt = await (await fetch(`${BASE}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-status", quote: "q", body: "b", author: "a" }),
+    })).json();
+
+    const ws = await openWs();
+    try {
+      await subscribe(ws, cmt.document);
+      const eventPromise = nextEvent(ws);
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      });
+
+      const event = await eventPromise;
+      assert.equal(event.type, "comment.updated");
+      assert.equal(event.comment.status, "closed");
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("broadcasts comment.deleted on DELETE", async () => {
+    const cmt = await (await fetch(`${BASE}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-delete", quote: "q", body: "b", author: "a" }),
+    })).json();
+
+    const ws = await openWs();
+    try {
+      await subscribe(ws, cmt.document);
+      const eventPromise = nextEvent(ws);
+
+      await fetch(`${BASE}/comments/${cmt.id}`, { method: "DELETE" });
+
+      const event = await eventPromise;
+      assert.equal(event.type, "comment.deleted");
+      assert.equal(event.comment.id, cmt.id);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("does not broadcast to clients subscribed to different documents", async () => {
+    const doc1 = await (await fetch(`${BASE}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-iso-1" }),
+    })).json();
+    const doc2 = await (await fetch(`${BASE}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-iso-2" }),
+    })).json();
+
+    const ws = await openWs();
+    try {
+      await subscribe(ws, doc2.id);
+
+      let received = false;
+      ws.on("message", (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.type !== "subscribed") received = true;
+      });
+
+      // Create comment on doc1 — ws is subscribed to doc2
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc1.id, quote: "q", body: "b", author: "a" }),
+      });
+
+      await new Promise((r) => setTimeout(r, 200));
+      assert.equal(received, false);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("multiple clients receive the same broadcast", async () => {
+    const doc = await (await fetch(`${BASE}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri: "https://example.com/ws-multi" }),
+    })).json();
+
+    const ws1 = await openWs();
+    const ws2 = await openWs();
+    try {
+      await subscribe(ws1, doc.id);
+      await subscribe(ws2, doc.id);
+
+      const p1 = nextEvent(ws1);
+      const p2 = nextEvent(ws2);
+
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "broadcast", author: "a" }),
+      });
+
+      const [e1, e2] = await Promise.all([p1, p2]);
+      assert.equal(e1.type, "comment.created");
+      assert.equal(e2.type, "comment.created");
+      assert.equal(e1.comment.body, "broadcast");
+      assert.equal(e2.comment.body, "broadcast");
+    } finally {
+      ws1.close();
+      ws2.close();
+    }
+  });
+
+  }); // describe("WebSocket")
 });

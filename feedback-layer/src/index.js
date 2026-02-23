@@ -34,6 +34,7 @@ import {
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
+import { connectWebSocket, disconnectWebSocket } from "./websocket.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
@@ -122,7 +123,13 @@ function init() {
       await waitForMermaid();
 
       // Load existing comments
-      loadComments();
+      await loadComments();
+
+      // Connect WebSocket for real-time updates
+      const wsDocId = _docId || (_comments.length > 0 ? _comments[0].document : null);
+      if (wsDocId) {
+        connectWebSocket(config.apiUrl, wsDocId, handleWsEvent);
+      }
 
       // AI revision UI
       initAuthorUI(config, () => _comments);
@@ -396,6 +403,65 @@ async function handleDelete(commentId) {
     console.error("[feedback-layer] Failed to delete comment:", err);
     showToast(`Failed to delete comment: ${err.message}`, "error");
   }
+}
+
+async function handleWsEvent(event) {
+  const { type, comment } = event;
+  if (!comment) return;
+
+  if (type === "comment.created") {
+    // Skip if we already have this comment (we created it ourselves)
+    if (_comments.some((c) => c.id === comment.id)) return;
+    _comments.push(comment);
+    // Anchor the new comment if it's a top-level comment
+    if (!comment.parent && comment.quote) {
+      try {
+        const range = await rangeFromSelector(
+          { exact: comment.quote, prefix: comment.prefix, suffix: comment.suffix },
+          _root
+        );
+        if (range && comment.status !== "closed") {
+          highlightRange(range, comment.id);
+          _anchoredIds.add(comment.id);
+          _commentRanges.set(comment.id, range);
+        }
+      } catch (e) {
+        console.warn(`[feedback-layer] Could not anchor WS comment ${comment.id}:`, e);
+      }
+    }
+  } else if (type === "comment.updated") {
+    const idx = _comments.findIndex((c) => c.id === comment.id);
+    if (idx === -1) return;
+    const prev = _comments[idx];
+    _comments[idx] = { ..._comments[idx], ...comment };
+
+    // Handle status change (resolve/reopen)
+    if (prev.status !== comment.status && !comment.parent) {
+      if (comment.status === "closed") {
+        removeHighlights(comment.id);
+      } else if (comment.status === "open") {
+        try {
+          const range = await rangeFromSelector(
+            { exact: comment.quote, prefix: comment.prefix, suffix: comment.suffix },
+            _root
+          );
+          if (range) {
+            highlightRange(range, comment.id);
+            _anchoredIds.add(comment.id);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  } else if (type === "comment.deleted") {
+    removeHighlights(comment.id);
+    _anchoredIds.delete(comment.id);
+    _commentRanges.delete(comment.id);
+    _comments = _comments.filter(
+      (c) => c.id !== comment.id && c.parent !== comment.id
+    );
+  }
+
+  renderComments(_comments, _anchoredIds, _commentRanges);
 }
 
 try {

@@ -5,6 +5,7 @@ const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { attachWebSocket, broadcast } = require("./websocket.js");
 const path = require("path");
 
 const app = express();
@@ -281,7 +282,9 @@ app.post("/comments", asyncHandler(async (req, res) => {
     return rows[0];
   });
 
-  res.status(201).json(formatComment(comment));
+  const formatted = formatComment(comment);
+  broadcast(documentId, { type: "comment.created", comment: formatted });
+  res.status(201).json(formatted);
 }));
 
 app.get("/comments/:id", asyncHandler(async (req, res) => {
@@ -319,14 +322,18 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
-  res.json(formatComment(updated.rows[0]));
+  const formatted = formatComment(updated.rows[0]);
+  broadcast(formatted.document, { type: "comment.updated", comment: formatted });
+  res.json(formatted);
 }));
 
 app.delete("/comments/:id", asyncHandler(async (req, res) => {
   await pool.query("DELETE FROM comments WHERE parent = $1", [req.params.id]);
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
-  res.json(formatComment(rows[0]));
+  const formatted = formatComment(rows[0]);
+  broadcast(formatted.document, { type: "comment.deleted", comment: formatted });
+  res.json(formatted);
 }));
 
 // ── Reaction endpoints ───────────────────────────────────────────────
@@ -400,6 +407,7 @@ async function start(options = {}) {
   await initSchema();
   return new Promise((resolve) => {
     const server = app.listen(port, host, () => {
+      attachWebSocket(server);
       console.log(`Remarq server listening on http://localhost:${port}`);
       resolve(server);
     });

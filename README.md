@@ -166,6 +166,32 @@ Status is a thread-level concept — only root comments have status (`"open"` or
 
 For replies, set `parent` to the parent comment's ID. Replies don't need `quote`/`prefix`/`suffix`.
 
+### WebSocket (real-time updates)
+
+Connect to `ws://<host>/ws` (or `wss://` for HTTPS) to receive real-time notifications when comments are created, updated, or deleted.
+
+**Subscribe to a document:**
+```json
+{ "type": "subscribe", "document": "<document-id>" }
+```
+
+**Server acknowledges:**
+```json
+{ "type": "subscribed", "document": "<document-id>" }
+```
+
+**Events broadcast to subscribers:**
+
+| Event | When | Payload |
+|-------|------|---------|
+| `comment.created` | A comment or reply is created via `POST /comments` | `{ type, comment }` |
+| `comment.updated` | A comment is updated via `PATCH /comments/:id` | `{ type, comment }` |
+| `comment.deleted` | A comment is deleted via `DELETE /comments/:id` | `{ type, comment }` |
+
+The `comment` object in each event matches the REST API response format. Clients subscribed to one document will not receive events for other documents. The WebSocket connection includes a heartbeat (ping/pong) to detect stale connections.
+
+The feedback layer client connects automatically when a `data-api-url` is configured and a document ID is available. It reconnects with exponential backoff if the connection drops.
+
 ## Features
 
 - **No accounts** — reviewers just type their name
@@ -174,6 +200,7 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 - **Resolve/unresolve** — mark feedback as addressed
 - **Keyboard shortcuts** — full keyboard navigation for the sidebar
 - **One script tag** — drop-in integration for any HTML page
+- **Real-time updates** — WebSocket pushes comment changes to all connected clients instantly
 - **Agent-ready API** — structured feedback your AI can consume and act on
 
 ## Documentation
