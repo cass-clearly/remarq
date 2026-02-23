@@ -44,12 +44,6 @@ If the review agent requests changes, fix them on the same branch, push, and re-
 ```
 gh pr merge --squash --delete-branch
 ```
-
-## Build
-
-A pre-commit hook automatically rebuilds `serve/feedback-layer.js` whenever `feedback-layer/src/` files are staged. No manual build step needed.
-The hook is enabled by `npm install` (via the `prepare` script).
-
 ## Documentation
 
 All functional changes (new features, changed behavior, new keyboard shortcuts, configuration options) must be documented in README.md before the PR is opened.
