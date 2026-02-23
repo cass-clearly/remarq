@@ -79,8 +79,6 @@ function formatComment(row) {
 function listResponse(items) { return { object: "list", data: items }; }
 function errorResponse(msg) { return { error: { message: msg } }; }
 
-const ALLOWED_EMOJI = new Set(["👍", "❤️", "👀", "🎉", "🤔", "😂"]);
-
 /**
  * Fetch reactions for a set of comment IDs and return a Map of commentId → reactions array.
  * Each reaction entry: { emoji, count, authors: [...] }
@@ -338,8 +336,8 @@ app.post("/comments/:id/reactions", asyncHandler(async (req, res) => {
   if (!emoji || !author) {
     return res.status(400).json(errorResponse("emoji and author are required"));
   }
-  if (!ALLOWED_EMOJI.has(emoji)) {
-    return res.status(400).json(errorResponse("emoji not allowed"));
+  if (typeof emoji !== "string" || emoji.length === 0 || emoji.length > 32) {
+    return res.status(400).json(errorResponse("invalid emoji"));
   }
 
   const cleanAuthor = sanitize(author);
@@ -364,8 +362,8 @@ app.delete("/comments/:id/reactions/:emoji", asyncHandler(async (req, res) => {
   }
 
   const emoji = req.params.emoji;
-  if (!ALLOWED_EMOJI.has(emoji)) {
-    return res.status(400).json(errorResponse("emoji not allowed"));
+  if (typeof emoji !== "string" || emoji.length === 0 || emoji.length > 32) {
+    return res.status(400).json(errorResponse("invalid emoji"));
   }
 
   const cleanAuthor = sanitize(author);
