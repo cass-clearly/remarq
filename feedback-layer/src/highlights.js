@@ -309,6 +309,21 @@ export function setHighlightResolved(commentId, resolved) {
 }
 
 /**
+ * Hide highlights for non-matching comments during search/filter.
+ * Pass an empty set to restore all highlights to visible.
+ */
+export function setDimmedHighlights(dimmedIds) {
+  document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
+    const commentId = el.dataset.commentId;
+    const shouldHide = dimmedIds.has(commentId);
+
+    if (el.classList.contains(ACTIVE_CLASS)) return; // Don't hide active highlight
+
+    el.style.display = shouldHide ? 'none' : '';
+  });
+}
+
+/**
  * Collect all text nodes within a Range.
  */
 function getTextNodesInRange(range) {

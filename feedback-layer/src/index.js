@@ -32,7 +32,6 @@ import {
   openSidebar,
   getCommenter,
 } from "./sidebar.js";
-import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
 
 let _root = null;      // content root element
@@ -43,6 +42,7 @@ let _pendingSelector = null; // selector awaiting comment submission
 let _tooltip = null;    // the "Annotate" tooltip element
 let _anchoredIds = new Set();  // Track successfully anchored comments
 let _commentRanges = new Map();  // Map comment ID to its range for position sorting
+let _matchedIds = null;  // Set of IDs matching active search, or null if no search
 
 function init() {
   const scriptTag =
@@ -106,6 +106,7 @@ function init() {
         onReply: handleReply,
         onEdit: handleEdit,
         onReaction: handleReaction,
+        onSearch: handleSearch,
       });
 
       // Highlight click → scroll sidebar to card
@@ -123,9 +124,6 @@ function init() {
 
       // Load existing comments
       loadComments();
-
-      // AI revision UI
-      initAuthorUI(config, () => _comments);
     } catch (err) {
       console.error("[feedback-layer] Boot failed:", err);
     }
@@ -143,11 +141,16 @@ async function loadComments() {
     _comments = await fetchComments(_docUri, _docId);
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    updateAuthors();
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to load comments:", err);
     showToast(`Failed to load comments: ${err.message}`, "error");
   }
+}
+
+function updateAuthors() {
+  // Author dropdown removed — unified search filters by both text and author
 }
 
 async function anchorAll(comments) {
@@ -258,6 +261,22 @@ function removeTooltip() {
   }
 }
 
+async function handleSearch(search) {
+  if (!search) {
+    _matchedIds = null;
+    renderComments(_comments, _anchoredIds, _commentRanges, null);
+    return;
+  }
+
+  try {
+    const filtered = await fetchComments(_docUri, _docId, { search });
+    _matchedIds = new Set(filtered.map(c => c.id));
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
+  } catch (err) {
+    console.error("[feedback-layer] Search failed:", err);
+  }
+}
+
 async function handleCommentSubmit({ comment, commenter }) {
   if (!_pendingSelector) return;
 
@@ -284,7 +303,8 @@ async function handleCommentSubmit({ comment, commenter }) {
       _anchoredIds.add(ann.id);
     }
 
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    updateAuthors();
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
 
     // Clear selection
     window.getSelection().removeAllRanges();
@@ -321,7 +341,7 @@ async function handleResolve(commentId, resolved) {
       }
     }
 
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to resolve comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
@@ -338,7 +358,8 @@ async function handleReply({ parent_id, comment, commenter }) {
       parent: parent_id,
     });
     _comments.push(reply);
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    updateAuthors();
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to create reply:", err);
     showToast(`Failed to save reply: ${err.message}`, "error");
@@ -350,7 +371,7 @@ async function handleEdit(commentId, comment) {
     const updated = await updateComment(commentId, { body: comment });
     const idx = _comments.findIndex((a) => a.id === commentId);
     if (idx !== -1) _comments[idx] = updated;
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
@@ -376,7 +397,7 @@ async function handleReaction(commentId, emoji) {
     // Update local comment's reactions
     const idx = _comments.findIndex((c) => c.id === commentId);
     if (idx !== -1) _comments[idx] = { ..._comments[idx], reactions: result.reactions };
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to toggle reaction:", err);
     showToast(`Failed to update reaction: ${err.message}`, "error");
@@ -391,7 +412,8 @@ async function handleDelete(commentId) {
     _comments = _comments.filter(
       (a) => a.id !== commentId && a.parent !== commentId
     );
-    renderComments(_comments, _anchoredIds, _commentRanges);
+    updateAuthors();
+    renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
   } catch (err) {
     console.error("[feedback-layer] Failed to delete comment:", err);
     showToast(`Failed to delete comment: ${err.message}`, "error");

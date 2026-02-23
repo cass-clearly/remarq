@@ -13,6 +13,7 @@ import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
 import { wrapIndex } from "./utils/keyboard-nav.js";
+import { debounce } from "./utils/debounce.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -27,9 +28,11 @@ let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
 let _onReaction = null;
+let _onSearch = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
+let _lastMatchedIds = null;
 let _activeThreadIndex = -1;
 let _keydownHandler = null;
 let _stylesInjected = false;
@@ -59,13 +62,14 @@ export function getCommenter() {
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction, onSearch }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
   _onReaction = onReaction;
+  _onSearch = onSearch;
 
   ensureStyles();
 
@@ -93,6 +97,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
                value="${escapeHtml(getCommenter())}">
       </div>
       <div class="fb-filter-section">
+        <input type="text" class="fb-search-input" placeholder="Search comments...">
         <label class="fb-filter-toggle">
           <input type="checkbox" class="fb-show-resolved-cb">
           <span>Show closed</span>
@@ -141,11 +146,20 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   const resolvedCb = _sidebar.querySelector(".fb-show-resolved-cb");
   resolvedCb.addEventListener("change", () => {
     _showResolved = resolvedCb.checked;
-    renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
+    renderComments(_lastComments, _lastAnchoredIds, new Map(), _lastMatchedIds);
   });
 
   // Global keyboard shortcut: "s" to toggle sidebar
   document.addEventListener("keydown", _handleGlobalKeydown);
+
+  // Search filter
+  const searchInput = _sidebar.querySelector(".fb-search-input");
+
+  const fireSearch = () => {
+    if (_onSearch) _onSearch(searchInput.value.trim());
+  };
+
+  searchInput.addEventListener("input", debounce(fireSearch, 300));
 }
 
 export function openSidebar() {
@@ -386,11 +400,13 @@ export function showCommentForm(quote) {
  * @param {Array} comments - All comments
  * @param {Set} anchoredIds - Set of comment IDs that successfully anchored to text
  * @param {Map} commentRanges - Map of comment ID to Range for position sorting
+ * @param {Set|null} matchedIds - Set of comment IDs matching active search, or null if no search
  */
-export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map()) {
+export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map(), matchedIds = null) {
   _lastComments = comments;
   _lastAnchoredIds = anchoredIds;
   _activeThreadIndex = -1;
+  _lastMatchedIds = matchedIds;
   _listEl.innerHTML = "";
 
   const { topLevel, repliesByParent } = threadComments(comments);
@@ -451,10 +467,14 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
     thread.setAttribute("tabindex", "0");
     thread.dataset.commentId = ann.id;
 
-    thread.appendChild(buildCard(ann, false));
-
-    // Render replies
+    // Dim thread if search is active and neither root nor any reply matches
     const replies = repliesByParent.get(ann.id) || [];
+    if (matchedIds !== null) {
+      const threadMatches = matchedIds.has(ann.id) || replies.some(r => matchedIds.has(r.id));
+      if (!threadMatches) thread.classList.add("fb-thread-dimmed");
+    }
+
+    thread.appendChild(buildCard(ann, false));
     for (const reply of replies) {
       thread.appendChild(buildCard(reply, true));
     }
@@ -959,7 +979,7 @@ function injectStyles() {
       background: none;
       border: none;
       cursor: pointer;
-      color: #7c3aed;
+      color: var(--remarq-accent);
       padding: 4px;
       line-height: 1;
       border-radius: 4px;
@@ -968,7 +988,7 @@ function injectStyles() {
       justify-content: center;
     }
     .fb-shortcuts-btn:hover {
-      background: #f3f0ff;
+      background: var(--remarq-bg-hover);
     }
     .fb-sidebar-toggle {
       background: none;
@@ -1199,6 +1219,28 @@ function injectStyles() {
     }
     .fb-filter-section {
       margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .fb-search-input {
+      width: 100%;
+      padding: 8px 16px;
+      border: 1px solid var(--remarq-border-input);
+      border-radius: 20px;
+      font-size: 13px;
+      box-sizing: border-box;
+      font-family: inherit;
+      background: var(--remarq-bg-surface);
+      color: var(--remarq-text);
+    }
+    .fb-search-input:focus {
+      outline: none;
+      border-color: var(--remarq-accent);
+      box-shadow: 0 0 0 2px var(--remarq-accent-ring);
+    }
+    .fb-thread-dimmed {
+      display: none;
     }
     .fb-filter-toggle {
       display: flex;
@@ -1439,28 +1481,28 @@ function injectStyles() {
       justify-content: center;
     }
     .fb-shortcuts-modal {
-      background: white;
+      background: var(--remarq-bg-surface);
       border-radius: 12px;
       width: 340px;
       max-width: 90%;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      box-shadow: 0 20px 60px var(--remarq-shadow-strong);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
-      color: #333;
+      color: var(--remarq-text);
     }
     .fb-shortcuts-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 14px 16px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--remarq-border-subtle);
     }
     .fb-shortcuts-close {
       background: none;
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #666;
+      color: var(--remarq-text-muted);
       padding: 0 4px;
       line-height: 1;
     }
@@ -1481,19 +1523,19 @@ function injectStyles() {
     }
     .fb-shortcuts-table kbd {
       display: inline-block;
-      background: #f3f4f6;
-      border: 1px solid #d1d5db;
+      background: var(--remarq-bg-secondary);
+      border: 1px solid var(--remarq-border-input);
       border-radius: 4px;
       padding: 2px 6px;
       font-size: 11px;
       font-family: inherit;
-      color: #374151;
+      color: var(--remarq-text);
       line-height: 1.4;
     }
     .fb-shortcuts-note {
       margin: 12px 0 0;
       font-size: 12px;
-      color: #888;
+      color: var(--remarq-text-faint);
       line-height: 1.4;
     }
   `;
