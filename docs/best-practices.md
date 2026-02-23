@@ -102,7 +102,7 @@ Then point your script tag at the public domain:
 
 ## Content Selector Strategies
 
-The `data-content-selector` attribute determines which part of the page is annotatable. It takes any CSS selector. Choosing the right selector keeps annotations focused and avoids performance issues.
+The `data-content-selector` attribute determines which part of the page is annotatable. It takes any CSS selector. Choosing the right selector keeps comments focused and avoids performance issues.
 
 ### Recommended patterns
 
@@ -178,7 +178,7 @@ Remarq's API is designed for AI agents to consume. Here are patterns for buildin
 ### The core loop
 
 1. Fetch open comments for a document
-2. Build a prompt from the annotations
+2. Build a prompt from the comments
 3. Have the agent revise the document
 4. Resolve the comments via the API
 5. Repeat until no open comments remain
@@ -193,7 +193,7 @@ REMARQ_URL = "https://remarq.example.com"
 DOCUMENT_URI = "https://example.com/docs/proposal.html"
 
 def get_open_comments():
-    """Fetch all unresolved annotations for a document."""
+    """Fetch all unresolved comments for a document."""
     resp = requests.get(f"{REMARQ_URL}/comments", params={
         "uri": DOCUMENT_URI,
         "status": "open",
@@ -210,7 +210,7 @@ def resolve_comment(comment_id):
     return resp.json()
 
 def build_prompt(comments):
-    """Format annotations into a structured prompt for the AI."""
+    """Format comments into a structured prompt for the AI."""
     sections = []
     for c in comments:
         if c["parent"]:
@@ -314,7 +314,7 @@ This format works well because:
 - **Threaded replies** provide additional context and consensus
 - **Author names** let the AI attribute feedback (useful when reviewers have different roles)
 
-You can enrich the prompt further by including the full document text alongside the annotations.
+You can enrich the prompt further by including the full document text alongside the comments.
 
 ### Batch processing across documents
 
@@ -380,10 +380,10 @@ A typical multi-reviewer cycle looks like this:
 
 ```
 Draft 1 (agent writes)
-  └─ Team reviews → leaves annotations
+  └─ Team reviews → leaves comments
       └─ Agent reads open comments → revises → resolves
           └─ Draft 2
-              └─ Team reviews again → new annotations on remaining issues
+              └─ Team reviews again → new comments on remaining issues
                   └─ Agent revises → resolves
                       └─ Final draft
 ```
@@ -392,7 +392,7 @@ Each round is explicit. The agent doesn't autonomously poll — you tell it when
 
 ### Handling conflicting feedback
 
-When reviewers disagree, the annotation thread captures the debate:
+When reviewers disagree, the comment thread captures the debate:
 
 ```
 Sarah: "This section is too technical"
@@ -424,9 +424,9 @@ curl -X POST https://remarq.example.com/comments \
 
 ## Document Lifecycle Management
 
-### When to clear old annotations
+### When to clear old comments
 
-Annotations are anchored to specific text using TextQuoteSelectors (via Apache Annotator). They survive minor edits, but major rewrites can orphan highlights. Clear annotations when:
+Comments are anchored to specific text using TextQuoteSelectors (via Apache Annotator). They survive minor edits, but major rewrites can orphan highlights. Clear comments when:
 
 - **You publish a new major version** of a document (v1 → v2)
 - **The document is substantially rewritten** — enough that most anchors would break
@@ -443,7 +443,7 @@ curl -X DELETE https://remarq.example.com/documents/doc_abc123
 
 ### Archiving completed reviews
 
-Before clearing annotations, export them for your records:
+Before clearing comments, export them for your records:
 
 ```bash
 # Export all comments (including resolved) for a document
@@ -455,7 +455,7 @@ This gives you a complete record of the feedback, including threaded discussions
 
 ### URI versioning strategies
 
-For versioned documents, use `data-document-uri` to separate annotation namespaces.
+For versioned documents, use `data-document-uri` to separate comment namespaces.
 
 **Recommended: Server-generated document IDs**
 
@@ -488,7 +488,7 @@ Server-generated IDs guarantee uniqueness across your entire deployment, avoidin
 If you prefer human-readable URIs and control your namespace, path-based versioning works too:
 
 ```html
-<!-- v1 annotations stay on v1 -->
+<!-- v1 comments stay on v1 -->
 <script ... data-document-uri="/docs/v1/proposal"></script>
 
 <!-- v2 gets a clean slate -->
@@ -500,10 +500,10 @@ If you prefer human-readable URIs and control your namespace, path-based version
 <script ... data-document-uri="/docs/proposal/2026-02-21"></script>
 ```
 
-All approaches keep old annotations accessible via the API (for archival) while the new version starts fresh.
+All approaches keep old comments accessible via the API (for archival) while the new version starts fresh.
 
-### Maintaining annotation history
+### Maintaining comment history
 
-If you want to keep annotations visible across minor edits (typo fixes, formatting changes), don't change the `data-document-uri`. The text anchoring system is designed to handle small content changes gracefully.
+If you want to keep comments visible across minor edits (typo fixes, formatting changes), don't change the `data-document-uri`. The text anchoring system is designed to handle small content changes gracefully.
 
-Only create a new URI when the document has changed enough that existing annotations no longer make sense in context.
+Only create a new URI when the document has changed enough that existing comments no longer make sense in context.
