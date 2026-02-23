@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const { WebSocketServer } = require("ws");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
@@ -281,7 +283,9 @@ app.post("/comments", asyncHandler(async (req, res) => {
     return rows[0];
   });
 
-  res.status(201).json(formatComment(comment));
+  const formatted = formatComment(comment);
+  res.status(201).json(formatted);
+  broadcast(documentId, { type: "comment:created", comment: formatted });
 }));
 
 app.get("/comments/:id", asyncHandler(async (req, res) => {
@@ -319,14 +323,18 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
-  res.json(formatComment(updated.rows[0]));
+  const formatted = formatComment(updated.rows[0]);
+  res.json(formatted);
+  broadcast(formatted.document, { type: "comment:updated", comment: formatted });
 }));
 
 app.delete("/comments/:id", asyncHandler(async (req, res) => {
   await pool.query("DELETE FROM comments WHERE parent = $1", [req.params.id]);
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
-  res.json(formatComment(rows[0]));
+  const formatted = formatComment(rows[0]);
+  res.json(formatted);
+  broadcast(formatted.document, { type: "comment:deleted", comment: formatted });
 }));
 
 // ── Reaction endpoints ───────────────────────────────────────────────
@@ -392,14 +400,72 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: { message: "Internal server error" } });
 });
 
+// ── WebSocket ───────────────────────────────────────────────────────
+
+// documentId → Set<WebSocket>
+const subscriptions = new Map();
+
+function broadcast(documentId, event) {
+  const clients = subscriptions.get(documentId);
+  if (!clients) return;
+  const message = JSON.stringify(event);
+  for (const ws of clients) {
+    if (ws.readyState === 1) { // WebSocket.OPEN
+      ws.send(message);
+    }
+  }
+}
+
+function handleWsConnection(ws) {
+  const subscribedDocs = new Set();
+
+  ws.on("message", (data) => {
+    let msg;
+    try { msg = JSON.parse(data); } catch { return; }
+
+    if (msg.type === "subscribe" && msg.documentId) {
+      subscribedDocs.add(msg.documentId);
+      if (!subscriptions.has(msg.documentId)) {
+        subscriptions.set(msg.documentId, new Set());
+      }
+      subscriptions.get(msg.documentId).add(ws);
+    }
+  });
+
+  ws.on("close", () => {
+    for (const docId of subscribedDocs) {
+      const clients = subscriptions.get(docId);
+      if (clients) {
+        clients.delete(ws);
+        if (clients.size === 0) subscriptions.delete(docId);
+      }
+    }
+  });
+}
+
 // ── Start server ────────────────────────────────────────────────────
 
 async function start(options = {}) {
   const port = options.port !== undefined ? options.port : (process.env.PORT || 3333);
   const host = options.host || "0.0.0.0";
   await initSchema();
+
+  const server = http.createServer(app);
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on("upgrade", (req, socket, head) => {
+    const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+    if (pathname === "/ws") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        handleWsConnection(ws);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
   return new Promise((resolve) => {
-    const server = app.listen(port, host, () => {
+    server.listen(port, host, () => {
       console.log(`Remarq server listening on http://localhost:${port}`);
       resolve(server);
     });
@@ -413,4 +479,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { start, app, pool, initSchema };
+module.exports = { start, app, pool, initSchema, broadcast, subscriptions };

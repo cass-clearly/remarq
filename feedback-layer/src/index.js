@@ -34,6 +34,7 @@ import {
 } from "./sidebar.js";
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
+import { connectWs } from "./ws.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
@@ -122,7 +123,19 @@ function init() {
       await waitForMermaid();
 
       // Load existing comments
-      loadComments();
+      await loadComments();
+
+      // Real-time updates via WebSocket
+      if (config.apiUrl) {
+        const wsDocId = _docId || (_comments.length > 0 ? _comments[0].document : null);
+        if (wsDocId) {
+          connectWs({
+            apiBaseUrl: config.apiUrl,
+            documentId: wsDocId,
+            onEvent: handleWsEvent,
+          });
+        }
+      }
 
       // AI revision UI
       initAuthorUI(config, () => _comments);
@@ -380,6 +393,38 @@ async function handleReaction(commentId, emoji) {
   } catch (err) {
     console.error("[feedback-layer] Failed to toggle reaction:", err);
     showToast(`Failed to update reaction: ${err.message}`, "error");
+  }
+}
+
+function handleWsEvent(event) {
+  const { type, comment } = event;
+  if (!comment) return;
+
+  if (type === "comment:created") {
+    // Avoid duplicates (e.g. from our own POST)
+    if (_comments.some((c) => c.id === comment.id)) return;
+    _comments.push(comment);
+    anchorAll(_comments).then((anchored) => {
+      _anchoredIds = anchored;
+      renderComments(_comments, _anchoredIds, _commentRanges);
+    });
+  } else if (type === "comment:updated") {
+    const idx = _comments.findIndex((c) => c.id === comment.id);
+    if (idx === -1) return;
+    _comments[idx] = comment;
+    anchorAll(_comments).then((anchored) => {
+      _anchoredIds = anchored;
+      renderComments(_comments, _anchoredIds, _commentRanges);
+    });
+  } else if (type === "comment:deleted") {
+    const existed = _comments.some((c) => c.id === comment.id);
+    if (!existed) return;
+    removeHighlights(comment.id);
+    _anchoredIds.delete(comment.id);
+    _comments = _comments.filter(
+      (c) => c.id !== comment.id && c.parent !== comment.id
+    );
+    renderComments(_comments, _anchoredIds, _commentRanges);
   }
 }
 
