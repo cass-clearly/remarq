@@ -214,14 +214,8 @@ app.get("/comments", asyncHandler(async (req, res) => {
   }
 
   if (search) {
-    conditions.push(`(body ILIKE $${idx} OR quote ILIKE $${idx})`);
+    conditions.push(`(body ILIKE $${idx} OR quote ILIKE $${idx} OR author ILIKE $${idx})`);
     params.push(`%${search}%`);
-    idx++;
-  }
-
-  if (author) {
-    conditions.push(`author ILIKE $${idx}`);
-    params.push(author);
     idx++;
   }
 

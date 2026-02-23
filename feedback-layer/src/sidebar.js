@@ -98,9 +98,6 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
       </div>
       <div class="fb-filter-section">
         <input type="text" class="fb-search-input" placeholder="Search comments...">
-        <select class="fb-author-filter">
-          <option value="">All authors</option>
-        </select>
         <label class="fb-filter-toggle">
           <input type="checkbox" class="fb-show-resolved-cb">
           <span>Show closed</span>
@@ -155,16 +152,14 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   // Global keyboard shortcut: "s" to toggle sidebar
   document.addEventListener("keydown", _handleGlobalKeydown);
 
-  // Search and author filter
+  // Search filter
   const searchInput = _sidebar.querySelector(".fb-search-input");
-  const authorSelect = _sidebar.querySelector(".fb-author-filter");
 
   const fireSearch = () => {
-    if (_onSearch) _onSearch(searchInput.value.trim(), authorSelect.value);
+    if (_onSearch) _onSearch(searchInput.value.trim());
   };
 
   searchInput.addEventListener("input", debounce(fireSearch, 300));
-  authorSelect.addEventListener("change", fireSearch);
 }
 
 export function openSidebar() {
@@ -396,22 +391,6 @@ export function showCommentForm(quote) {
 
   // Scroll form into view
   _formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-/**
- * Populate the author filter dropdown with unique author names.
- */
-export function setAuthors(authors) {
-  const select = _sidebar.querySelector(".fb-author-filter");
-  const current = select.value;
-  select.innerHTML = '<option value="">All authors</option>';
-  for (const name of authors.sort()) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    select.appendChild(opt);
-  }
-  if (authors.includes(current)) select.value = current;
 }
 
 /**
@@ -1246,30 +1225,14 @@ function injectStyles() {
     }
     .fb-search-input {
       width: 100%;
-      padding: 6px 10px;
+      padding: 8px 16px;
       border: 1px solid #d1d5db;
-      border-radius: 6px;
+      border-radius: 20px;
       font-size: 13px;
       box-sizing: border-box;
       font-family: inherit;
     }
     .fb-search-input:focus {
-      outline: none;
-      border-color: #7c3aed;
-      box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
-    }
-    .fb-author-filter {
-      width: 100%;
-      padding: 6px 10px;
-      border: 1px solid #d1d5db;
-      border-radius: 6px;
-      font-size: 13px;
-      box-sizing: border-box;
-      font-family: inherit;
-      background: #fff;
-      cursor: pointer;
-    }
-    .fb-author-filter:focus {
       outline: none;
       border-color: #7c3aed;
       box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
