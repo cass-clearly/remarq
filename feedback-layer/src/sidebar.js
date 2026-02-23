@@ -651,7 +651,7 @@ export function focusCommentCard(commentId) {
 function injectStyles() {
   const style = document.createElement("style");
   style.textContent = `
-    :root {
+    :host {
       --fb-reaction-border: #dadce0;
       --fb-reaction-bg: #f1f3f4;
       --fb-reaction-text: #5f6368;
@@ -664,8 +664,26 @@ function injectStyles() {
       --fb-picker-bg: #fff;
       --fb-picker-border: #e0e0e0;
       --fb-picker-shadow: rgba(0,0,0,0.08);
-      --fb-emoji-hover-bg: #e8eaed;
-      --fb-emoji-hover-text: #202124;
+      --fb-option-hover-bg: #e8eaed;
+      --fb-option-hover-text: #202124;
+    }
+    @media (prefers-color-scheme: dark) {
+      :host {
+        --fb-reaction-border: #444;
+        --fb-reaction-bg: #2a2a2a;
+        --fb-reaction-text: #aaa;
+        --fb-reaction-hover-border: #555;
+        --fb-reaction-hover-bg: #333;
+        --fb-reaction-mine-border: #4a90d9;
+        --fb-reaction-mine-bg: #1a2d44;
+        --fb-reaction-mine-text: #6ab0f3;
+        --fb-reaction-mine-hover-bg: #1e3550;
+        --fb-picker-bg: #2a2a2a;
+        --fb-picker-border: #444;
+        --fb-picker-shadow: rgba(0,0,0,0.3);
+        --fb-option-hover-bg: #333;
+        --fb-option-hover-text: #e0e0e0;
+      }
     }
     .fb-sidebar {
       position: fixed;
@@ -1027,8 +1045,8 @@ function injectStyles() {
       justify-content: center;
     }
     .fb-emoji-option:hover {
-      background: var(--fb-emoji-hover-bg);
-      color: var(--fb-emoji-hover-text);
+      background: var(--fb-option-hover-bg);
+      color: var(--fb-option-hover-text);
     }
     .fb-filter-section {
       margin-bottom: 12px;
