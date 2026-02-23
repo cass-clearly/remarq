@@ -59,6 +59,7 @@ Configure via data attributes on the script tag:
 | `data-api-url` | Yes | - | URL of your Remarq server |
 | `data-content-selector` | No | `"body"` | CSS selector for annotatable content |
 | `data-document-uri` | No | `window.location.pathname` | Unique identifier for this document |
+| `data-theme` | No | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
 
 ### Examples
 
