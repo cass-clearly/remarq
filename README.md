@@ -124,58 +124,15 @@ DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
 
 Stripe-inspired resource pattern. All responses include an `object` field.
 
-### Documents
+| Resource | Key endpoints |
+|----------|---------------|
+| **Documents** | `GET /documents`, `POST /documents`, `GET /documents/:id`, `DELETE /documents/:id` |
+| **Comments** | `GET /comments?status=open` (the money endpoint), `POST /comments`, `PATCH /comments/:id`, `DELETE /comments/:id` |
+| **Webhooks** | `POST /webhooks`, `PATCH /webhooks/:id`, `DELETE /webhooks/:id` |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/documents` | List all documents |
-| `POST` | `/documents` | Create or find a document by URI |
-| `GET` | `/documents/:id` | Retrieve a document |
-| `DELETE` | `/documents/:id` | Delete a document and its comments |
+Query params can be combined: `?document=<id>&status=open&expand=document`
 
-### Comments
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/comments` | List all comments |
-| `GET` | `/comments?document=<id>` | List comments by document ID |
-| `GET` | `/comments?uri=<url>` | List comments by document URI |
-| `GET` | `/comments?status=open` | **The money endpoint.** Get all unresolved feedback. |
-| `GET` | `/comments?expand=document` | Hydrate document objects inline |
-| `POST` | `/comments` | Create a comment (set `parent` to reply to an existing comment) |
-| `GET` | `/comments/:id` | Retrieve a comment |
-| `PATCH` | `/comments/:id` | Update body or status (root comments only) |
-| `DELETE` | `/comments/:id` | Delete a comment and its replies |
-
-### Webhooks
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/webhooks` | List all webhooks |
-| `POST` | `/webhooks` | Register a webhook (requires `url`, `secret`, `events[]`) |
-| `GET` | `/webhooks/:id` | Retrieve a webhook |
-| `PATCH` | `/webhooks/:id` | Update a webhook (`url`, `events`, `active`) |
-| `DELETE` | `/webhooks/:id` | Delete a webhook |
-
-Events: `comment.created`, `comment.resolved`, `comment.deleted`. Payloads are signed with HMAC-SHA256 using the webhook's secret. Slack and Discord URLs are auto-detected for platform-specific formatting.
-
-Status is a thread-level concept — only root comments have status (`"open"` or `"closed"`). Replies always have `status: null`. The `?status=` filter matches root comments and includes all their replies. Query params can be combined (e.g. `?document=<id>&status=open&expand=document`).
-
-### POST /comments body
-
-```json
-{
-  "uri": "https://example.com/doc.html",
-  "quote": "selected text",
-  "prefix": "text before",
-  "suffix": "text after",
-  "body": "This needs work",
-  "author": "Alice",
-  "parent": null
-}
-```
-
-For replies, set `parent` to the parent comment's ID. Replies don't need `quote`/`prefix`/`suffix`.
+**[Full API documentation &rarr;](docs/api.md)**
 
 ## Features
 
