@@ -45,21 +45,10 @@ If the review agent requests changes, fix them on the same branch, push, and re-
 gh pr merge --squash --delete-branch
 ```
 
-## Build Step (Required)
+## Build
 
-Whenever you modify any JS files in `feedback-layer/src/`, you **must** rebuild the served bundle:
-
-```bash
-cd feedback-layer && npm run build
-```
-
-This updates `serve/feedback-layer.js` which is what the server actually serves. If you skip this step, your changes will exist in source but won't be visible to users. Always rebuild before committing to verify your changes work.
-
-A pre-commit hook in `.githooks/pre-commit` handles this automatically — it detects staged changes in `feedback-layer/src/`, runs the build, and stages the updated bundle. The hook is enabled by the `prepare` script on `npm install`, or manually:
-
-```bash
-git config core.hooksPath .githooks
-```
+A pre-commit hook automatically rebuilds `serve/feedback-layer.js` whenever `feedback-layer/src/` files are staged. No manual build step needed.
+The hook is enabled by `npm install` (via the `prepare` script).
 
 ## Documentation
 
