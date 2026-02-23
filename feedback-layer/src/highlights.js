@@ -8,6 +8,7 @@
 const HIGHLIGHT_CLASS = "fb-highlight";
 const ACTIVE_CLASS = "fb-highlight-active";
 const RESOLVED_CLASS = "fb-highlight-resolved";
+const PRIVATE_CLASS = "fb-highlight-private";
 
 let _onHighlightClick = null;
 
@@ -19,7 +20,7 @@ export function setHighlightClickHandler(fn) {
  * Wrap a Range in <mark> elements. Returns an array of the created marks
  * (may be multiple if the range spans multiple text nodes).
  */
-export function highlightRange(range, commentId) {
+export function highlightRange(range, commentId, { isPrivate } = {}) {
   const marks = [];
 
   // If the range is within a single text node, simple wrap
@@ -27,7 +28,7 @@ export function highlightRange(range, commentId) {
     range.startContainer === range.endContainer &&
     range.startContainer.nodeType === Node.TEXT_NODE
   ) {
-    const mark = wrapTextRange(range, commentId);
+    const mark = wrapTextRange(range, commentId, isPrivate);
     marks.push(mark);
   } else {
     // Complex range spanning multiple nodes — collect text nodes in range
@@ -47,7 +48,7 @@ export function highlightRange(range, commentId) {
       }
 
       if (!nodeRange.collapsed) {
-        marks.push(wrapTextRange(nodeRange, commentId));
+        marks.push(wrapTextRange(nodeRange, commentId, isPrivate));
       }
     }
   }
@@ -55,7 +56,7 @@ export function highlightRange(range, commentId) {
   return marks;
 }
 
-function wrapTextRange(range, commentId) {
+function wrapTextRange(range, commentId, isPrivate) {
   // Check if we're inside an SVG <text> element
   let node = range.commonAncestorContainer;
   while (node && node.nodeType !== Node.ELEMENT_NODE) {
@@ -91,7 +92,7 @@ function wrapTextRange(range, commentId) {
 
   // Regular HTML highlighting for HTML content
   const mark = document.createElement("mark");
-  mark.className = HIGHLIGHT_CLASS;
+  mark.className = HIGHLIGHT_CLASS + (isPrivate ? ` ${PRIVATE_CLASS}` : "");
   mark.dataset.commentId = commentId;
   mark.style.backgroundColor = "rgba(255, 212, 0, 0.35)";
   mark.style.cursor = "pointer";

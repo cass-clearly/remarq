@@ -45,6 +45,9 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
+
+  // Add visibility column for private annotations (idempotent)
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS visibility VARCHAR(10) DEFAULT 'public'`);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -62,6 +65,7 @@ function formatComment(row) {
     quote: row.quote || null, prefix: row.prefix || null, suffix: row.suffix || null,
     body: row.body, author: row.author, status: row.parent ? null : row.status,
     parent: row.parent || null,
+    visibility: row.visibility || "public",
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -136,7 +140,7 @@ app.delete("/documents/:id", asyncHandler(async (req, res) => {
 // ── Comment endpoints ───────────────────────────────────────────────
 
 app.get("/comments", asyncHandler(async (req, res) => {
-  const { document: docId, uri, status, expand } = req.query;
+  const { document: docId, uri, status, expand, viewer } = req.query;
 
   if (status !== undefined && status !== "open" && status !== "closed") {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
@@ -184,6 +188,15 @@ app.get("/comments", asyncHandler(async (req, res) => {
     }
   }
 
+  // Visibility filtering: show public comments + viewer's private comments.
+  // NOTE: viewer is client-supplied and unauthenticated (same trust model as
+  // the author field). Private visibility is a UX convenience, not access control.
+  if (viewer) {
+    rows = rows.filter(r => r.visibility === 'public' || (r.visibility === 'private' && r.author === viewer));
+  } else {
+    rows = rows.filter(r => r.visibility === 'public');
+  }
+
   let data = rows.map(formatComment);
 
   if (expand === "document") {
@@ -199,10 +212,14 @@ app.get("/comments", asyncHandler(async (req, res) => {
 }));
 
 app.post("/comments", asyncHandler(async (req, res) => {
-  const { uri, document: docId, quote, prefix, suffix, body, author, parent } = req.body;
+  const { uri, document: docId, quote, prefix, suffix, body, author, parent, visibility } = req.body;
 
   if (!body || !author) {
     return res.status(400).json(errorResponse("body and author are required"));
+  }
+
+  if (visibility !== undefined && visibility !== "public" && visibility !== "private") {
+    return res.status(400).json(errorResponse('visibility must be "public" or "private"'));
   }
   if (!parent && !quote) {
     return res.status(400).json(errorResponse("quote is required for top-level comments"));
@@ -229,10 +246,11 @@ app.post("/comments", asyncHandler(async (req, res) => {
   }
 
   const commentStatus = parent ? null : "open";
+  const commentVisibility = visibility || "public";
   const comment = await insertWithId("cmt", async (id) => {
     const { rows } = await pool.query(
-      "INSERT INTO comments (id, document, quote, prefix, suffix, body, author, status, parent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",
-      [id, documentId, quote || "", prefix || null, suffix || null, cleanBody, cleanAuthor, commentStatus, parent || null]
+      "INSERT INTO comments (id, document, quote, prefix, suffix, body, author, status, parent, visibility) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
+      [id, documentId, quote || "", prefix || null, suffix || null, cleanBody, cleanAuthor, commentStatus, parent || null, commentVisibility]
     );
     return rows[0];
   });
@@ -243,6 +261,15 @@ app.post("/comments", asyncHandler(async (req, res) => {
 app.get("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
+  // Enforce visibility: private comments only visible to their author (via viewer param)
+  if (rows[0].visibility === "private") {
+    const { viewer } = req.query;
+    if (!viewer || viewer !== rows[0].author) {
+      return res.status(404).json(errorResponse("Comment not found"));
+    }
+  }
+
   let comment = formatComment(rows[0]);
   if (req.query.expand === "document") {
     const { rows: docs } = await pool.query("SELECT * FROM documents WHERE id = $1", [comment.document]);
@@ -255,7 +282,7 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
 
-  const { body, status } = req.body;
+  const { body, status, visibility } = req.body;
 
   if (status !== undefined && rows[0].parent) {
     return res.status(400).json(errorResponse("status cannot be set on replies"));
@@ -265,11 +292,18 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
   }
 
+  if (visibility !== undefined && visibility !== "public" && visibility !== "private") {
+    return res.status(400).json(errorResponse('visibility must be "public" or "private"'));
+  }
+
   if (body !== undefined) {
     await pool.query("UPDATE comments SET body = $1 WHERE id = $2", [sanitize(body), req.params.id]);
   }
   if (status !== undefined) {
     await pool.query("UPDATE comments SET status = $1 WHERE id = $2", [status, req.params.id]);
+  }
+  if (visibility !== undefined) {
+    await pool.query("UPDATE comments SET visibility = $1 WHERE id = $2", [visibility, req.params.id]);
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);

@@ -135,7 +135,8 @@ function init() {
 
 async function loadComments() {
   try {
-    _comments = await fetchComments(_docUri, _docId);
+    const viewer = getCommenter() || undefined;
+    _comments = await fetchComments(_docUri, _docId, { viewer });
     const anchored = await anchorAll(_comments);
     _anchoredIds = anchored;
     renderComments(_comments, _anchoredIds, _commentRanges);
@@ -163,7 +164,7 @@ async function anchorAll(comments) {
       );
 
       if (range && ann.status !== 'closed') {
-        highlightRange(range, ann.id);
+        highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
         anchored.add(ann.id);
         _commentRanges.set(ann.id, range);
       } else if (range && ann.status === 'closed') {
@@ -249,7 +250,7 @@ function removeTooltip() {
   }
 }
 
-async function handleCommentSubmit({ comment, commenter }) {
+async function handleCommentSubmit({ comment, commenter, visibility }) {
   if (!_pendingSelector) return;
 
   try {
@@ -261,6 +262,7 @@ async function handleCommentSubmit({ comment, commenter }) {
       suffix: _pendingSelector.suffix,
       body: comment,
       author: commenter,
+      visibility,
     });
 
     _comments.push(ann);
@@ -271,7 +273,7 @@ async function handleCommentSubmit({ comment, commenter }) {
       _root
     );
     if (range) {
-      highlightRange(range, ann.id);
+      highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
       _anchoredIds.add(ann.id);
     }
 
@@ -304,7 +306,7 @@ async function handleResolve(commentId, resolved) {
         _root
       );
       if (range) {
-        highlightRange(range, ann.id);
+        highlightRange(range, ann.id, { isPrivate: ann.visibility === 'private' });
         _anchoredIds.add(ann.id);
       } else {
         // Text no longer exists, remove from anchored set
