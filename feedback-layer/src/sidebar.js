@@ -979,7 +979,7 @@ function injectStyles() {
       background: none;
       border: none;
       cursor: pointer;
-      color: #7c3aed;
+      color: var(--remarq-accent);
       padding: 4px;
       line-height: 1;
       border-radius: 4px;
@@ -988,7 +988,7 @@ function injectStyles() {
       justify-content: center;
     }
     .fb-shortcuts-btn:hover {
-      background: #f3f0ff;
+      background: var(--remarq-bg-hover);
     }
     .fb-sidebar-toggle {
       background: none;
@@ -1226,16 +1226,18 @@ function injectStyles() {
     .fb-search-input {
       width: 100%;
       padding: 8px 16px;
-      border: 1px solid #d1d5db;
+      border: 1px solid var(--remarq-border-input);
       border-radius: 20px;
       font-size: 13px;
       box-sizing: border-box;
       font-family: inherit;
+      background: var(--remarq-bg-surface);
+      color: var(--remarq-text);
     }
     .fb-search-input:focus {
       outline: none;
-      border-color: #7c3aed;
-      box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
+      border-color: var(--remarq-accent);
+      box-shadow: 0 0 0 2px var(--remarq-accent-ring);
     }
     .fb-thread-dimmed {
       display: none;
@@ -1479,28 +1481,28 @@ function injectStyles() {
       justify-content: center;
     }
     .fb-shortcuts-modal {
-      background: white;
+      background: var(--remarq-bg-surface);
       border-radius: 12px;
       width: 340px;
       max-width: 90%;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      box-shadow: 0 20px 60px var(--remarq-shadow-strong);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
-      color: #333;
+      color: var(--remarq-text);
     }
     .fb-shortcuts-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 14px 16px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--remarq-border-subtle);
     }
     .fb-shortcuts-close {
       background: none;
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #666;
+      color: var(--remarq-text-muted);
       padding: 0 4px;
       line-height: 1;
     }
@@ -1521,19 +1523,19 @@ function injectStyles() {
     }
     .fb-shortcuts-table kbd {
       display: inline-block;
-      background: #f3f4f6;
-      border: 1px solid #d1d5db;
+      background: var(--remarq-bg-secondary);
+      border: 1px solid var(--remarq-border-input);
       border-radius: 4px;
       padding: 2px 6px;
       font-size: 11px;
       font-family: inherit;
-      color: #374151;
+      color: var(--remarq-text);
       line-height: 1.4;
     }
     .fb-shortcuts-note {
       margin: 12px 0 0;
       font-size: 12px;
-      color: #888;
+      color: var(--remarq-text-faint);
       line-height: 1.4;
     }
   `;

@@ -23,7 +23,6 @@ import {
   removeAllHighlights,
   setHighlightClickHandler,
   setActiveHighlight,
-  setDimmedHighlights,
 } from "./highlights.js";
 import {
   createSidebar,
@@ -266,7 +265,6 @@ async function handleSearch(search) {
   if (!search) {
     _matchedIds = null;
     renderComments(_comments, _anchoredIds, _commentRanges, null);
-    setDimmedHighlights(new Set());
     return;
   }
 
@@ -274,14 +272,6 @@ async function handleSearch(search) {
     const filtered = await fetchComments(_docUri, _docId, { search });
     _matchedIds = new Set(filtered.map(c => c.id));
     renderComments(_comments, _anchoredIds, _commentRanges, _matchedIds);
-
-    const dimmedIds = new Set();
-    for (const c of _comments) {
-      if (!c.parent && _anchoredIds.has(c.id) && !_matchedIds.has(c.id)) {
-        dimmedIds.add(c.id);
-      }
-    }
-    setDimmedHighlights(dimmedIds);
   } catch (err) {
     console.error("[feedback-layer] Search failed:", err);
   }
