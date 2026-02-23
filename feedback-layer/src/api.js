@@ -3,9 +3,19 @@
  */
 
 let _baseUrl = "";
+let _apiKey = "";
 
 export function setBaseUrl(url) {
   _baseUrl = url.replace(/\/+$/, "");
+}
+
+export function setApiKey(key) {
+  _apiKey = key;
+}
+
+function authHeaders() {
+  if (!_apiKey) return {};
+  return { Authorization: `Bearer ${_apiKey}` };
 }
 
 /**
@@ -25,7 +35,9 @@ export async function fetchComments(uri, documentId) {
   const query = documentId
     ? `document=${encodeURIComponent(documentId)}`
     : `uri=${encodeURIComponent(uri)}`;
-  const res = await fetch(`${_baseUrl}/comments?${query}`);
+  const res = await fetch(`${_baseUrl}/comments?${query}`, {
+    headers: authHeaders(),
+  });
   await throwIfNotOk(res, "Failed to fetch comments");
   const json = await res.json();
   return json.data;
@@ -49,7 +61,7 @@ export async function createComment({
   }
   const res = await fetch(`${_baseUrl}/comments`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
   });
   await throwIfNotOk(res, "Failed to create comment");
@@ -59,7 +71,7 @@ export async function createComment({
 export async function updateComment(id, { body }) {
   const res = await fetch(`${_baseUrl}/comments/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ body }),
   });
   await throwIfNotOk(res, "Failed to update comment");
@@ -69,7 +81,7 @@ export async function updateComment(id, { body }) {
 export async function updateCommentStatus(id, status) {
   const res = await fetch(`${_baseUrl}/comments/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ status }),
   });
   await throwIfNotOk(res, "Failed to update comment status");
@@ -79,6 +91,7 @@ export async function updateCommentStatus(id, status) {
 export async function deleteComment(id) {
   const res = await fetch(`${_baseUrl}/comments/${id}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   await throwIfNotOk(res, "Failed to delete comment");
 }
