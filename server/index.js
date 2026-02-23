@@ -42,6 +42,16 @@ async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reactions (
+      comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      author     TEXT NOT NULL,
+      emoji      TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (comment_id, author, emoji)
+    )
+  `);
+
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
@@ -68,6 +78,35 @@ function formatComment(row) {
 
 function listResponse(items) { return { object: "list", data: items }; }
 function errorResponse(msg) { return { error: { message: msg } }; }
+
+/**
+ * Fetch reactions for a set of comment IDs and return a Map of commentId → reactions array.
+ * Each reaction entry: { emoji, count, authors: [...] }
+ */
+async function fetchReactionsForComments(commentIds) {
+  const map = new Map();
+  if (commentIds.length === 0) return map;
+  const { rows } = await pool.query(
+    "SELECT comment_id, emoji, author FROM reactions WHERE comment_id = ANY($1) ORDER BY emoji, created_at ASC",
+    [commentIds]
+  );
+  for (const row of rows) {
+    if (!map.has(row.comment_id)) map.set(row.comment_id, new Map());
+    const emojiMap = map.get(row.comment_id);
+    if (!emojiMap.has(row.emoji)) emojiMap.set(row.emoji, []);
+    emojiMap.get(row.emoji).push(row.author);
+  }
+  // Convert to the final format
+  const result = new Map();
+  for (const [commentId, emojiMap] of map) {
+    const reactions = [];
+    for (const [emoji, authors] of emojiMap) {
+      reactions.push({ emoji, count: authors.length, authors });
+    }
+    result.set(commentId, reactions);
+  }
+  return result;
+}
 
 // ── Helper: find or create document by URI ──────────────────────────
 
@@ -186,6 +225,11 @@ app.get("/comments", asyncHandler(async (req, res) => {
 
   let data = rows.map(formatComment);
 
+  // Attach reactions
+  const commentIds = data.map((c) => c.id);
+  const reactionsMap = await fetchReactionsForComments(commentIds);
+  data = data.map((c) => ({ ...c, reactions: reactionsMap.get(c.id) || [] }));
+
   if (expand === "document") {
     const docIds = [...new Set(data.map((c) => c.document))];
     if (docIds.length > 0) {
@@ -244,6 +288,8 @@ app.get("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   let comment = formatComment(rows[0]);
+  const reactionsMap = await fetchReactionsForComments([comment.id]);
+  comment = { ...comment, reactions: reactionsMap.get(comment.id) || [] };
   if (req.query.expand === "document") {
     const { rows: docs } = await pool.query("SELECT * FROM documents WHERE id = $1", [comment.document]);
     if (docs.length > 0) comment = { ...comment, document: formatDocument(docs[0]) };
@@ -281,6 +327,58 @@ app.delete("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   res.json(formatComment(rows[0]));
+}));
+
+// ── Reaction endpoints ───────────────────────────────────────────────
+
+app.post("/comments/:id/reactions", asyncHandler(async (req, res) => {
+  const { emoji, author } = req.body;
+  if (!emoji || !author) {
+    return res.status(400).json(errorResponse("emoji and author are required"));
+  }
+  if (typeof emoji !== "string" || emoji.length === 0 || emoji.length > 32) {
+    return res.status(400).json(errorResponse("invalid emoji"));
+  }
+
+  const cleanAuthor = sanitize(author);
+
+  // Verify comment exists
+  const { rows: check } = await pool.query("SELECT id FROM comments WHERE id = $1", [req.params.id]);
+  if (check.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
+  await pool.query(
+    "INSERT INTO reactions (comment_id, author, emoji) VALUES ($1, $2, $3) ON CONFLICT (comment_id, author, emoji) DO NOTHING",
+    [req.params.id, cleanAuthor, emoji]
+  );
+
+  const reactionsMap = await fetchReactionsForComments([req.params.id]);
+  res.status(201).json({ comment_id: req.params.id, reactions: reactionsMap.get(req.params.id) || [] });
+}));
+
+app.delete("/comments/:id/reactions/:emoji", asyncHandler(async (req, res) => {
+  const { author } = req.query;
+  if (!author) {
+    return res.status(400).json(errorResponse("author query parameter is required"));
+  }
+
+  const emoji = req.params.emoji;
+  if (typeof emoji !== "string" || emoji.length === 0 || emoji.length > 32) {
+    return res.status(400).json(errorResponse("invalid emoji"));
+  }
+
+  const cleanAuthor = sanitize(author);
+
+  // Verify comment exists
+  const { rows: check } = await pool.query("SELECT id FROM comments WHERE id = $1", [req.params.id]);
+  if (check.length === 0) return res.status(404).json(errorResponse("Comment not found"));
+
+  await pool.query(
+    "DELETE FROM reactions WHERE comment_id = $1 AND author = $2 AND emoji = $3",
+    [req.params.id, cleanAuthor, emoji]
+  );
+
+  const reactionsMap = await fetchReactionsForComments([req.params.id]);
+  res.json({ comment_id: req.params.id, reactions: reactionsMap.get(req.params.id) || [] });
 }));
 
 // ── Static files ────────────────────────────────────────────────────

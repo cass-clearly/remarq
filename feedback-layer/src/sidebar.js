@@ -25,6 +25,7 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onReaction = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
@@ -54,13 +55,15 @@ export function getCommenter() {
  * @param {Function} opts.onResolve - Called with (commentId, resolved) when resolve toggled
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
+ * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onReaction = onReaction;
 
   ensureStyles();
 
@@ -307,11 +310,16 @@ function buildCard(ann, isReply) {
       ${!isReply ? `<button class="fb-cmt-resolve" title="${isClosed ? "Reopen" : "Resolve"}">${isClosed ? "&#x21a9;" : "&#x2713;"}</button>` : ""}
       <button class="fb-cmt-delete" title="Delete">&times;</button>
     </div>
+    <div class="fb-reactions"></div>
   `;
+
+  // Build reaction bar
+  const reactionsEl = card.querySelector(".fb-reactions");
+  buildReactionBar(reactionsEl, ann);
 
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit")) return;
+      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-reactions")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -337,6 +345,84 @@ function buildCard(ann, isReply) {
   });
 
   return card;
+}
+
+const REACTION_EMOJI = {
+  "👍": "Like",
+  "❤️": "Love",
+  "👀": "Seen",
+  "🎉": "Celebrate",
+  "🤔": "Question",
+  "😂": "Funny",
+};
+const EMOJI_SET = Object.keys(REACTION_EMOJI);
+
+function buildReactionBar(container, ann) {
+  const reactions = ann.reactions || [];
+  const commenter = getCommenter();
+
+  // Render existing reaction badges (icon-style, like Google Docs)
+  for (const r of reactions) {
+    const badge = document.createElement("button");
+    badge.className = "fb-reaction-badge";
+    const isMine = commenter && r.authors.includes(commenter);
+    if (isMine) {
+      badge.classList.add("fb-reaction-mine");
+    }
+    const label = REACTION_EMOJI[r.emoji];
+    badge.innerHTML = `${r.emoji}<span class="fb-reaction-count">${r.count}</span>`;
+    badge.title = (label ? label + ": " : "") + r.authors.join(", ");
+    badge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (_onReaction) _onReaction(ann.id, r.emoji);
+    });
+    container.appendChild(badge);
+  }
+
+  // Add-reaction button (muted icon style)
+  const addBtn = document.createElement("button");
+  addBtn.className = "fb-reaction-add";
+  addBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="15" x2="16" y2="15"/><circle cx="9" cy="10" r="0.5" fill="currentColor"/><circle cx="15" cy="10" r="0.5" fill="currentColor"/></svg>';
+  addBtn.title = "Add reaction";
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showEmojiPicker(container, ann, addBtn);
+  });
+  container.appendChild(addBtn);
+}
+
+function showEmojiPicker(container, ann, addBtn) {
+  // Remove existing picker if open
+  const existing = container.querySelector(".fb-emoji-picker");
+  if (existing) { existing.remove(); return; }
+
+  const picker = document.createElement("div");
+  picker.className = "fb-emoji-picker";
+
+  for (const emoji of EMOJI_SET) {
+    const label = REACTION_EMOJI[emoji];
+    const btn = document.createElement("button");
+    btn.className = "fb-emoji-option";
+    btn.textContent = emoji;
+    btn.title = label;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      picker.remove();
+      if (_onReaction) _onReaction(ann.id, emoji);
+    });
+    picker.appendChild(btn);
+  }
+
+  container.insertBefore(picker, addBtn.nextSibling);
+
+  // Dismiss on outside click
+  const dismiss = (e) => {
+    if (!picker.contains(e.target) && e.target !== addBtn) {
+      picker.remove();
+      document.removeEventListener("click", dismiss, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", dismiss, true), 0);
 }
 
 function showReplyForm(parentId, threadEl, replyBtn) {
@@ -801,6 +887,96 @@ function injectStyles() {
     }
     .fb-cmt-closed .fb-cmt-resolve {
       color: var(--remarq-success);
+    }
+    .fb-reactions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .fb-reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid #dadce0;
+      background: #f1f3f4;
+      font-size: 11px;
+      color: #5f6368;
+      cursor: pointer;
+      line-height: 1.4;
+      font-family: inherit;
+    }
+    .fb-reaction-badge svg {
+      color: #5f6368;
+      flex-shrink: 0;
+    }
+    .fb-reaction-count {
+      font-size: 11px;
+      color: #5f6368;
+    }
+    .fb-reaction-badge:hover {
+      border-color: #bdc1c6;
+      background: #e8eaed;
+    }
+    .fb-reaction-mine {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+    }
+    .fb-reaction-mine svg {
+      color: #1a73e8;
+    }
+    .fb-reaction-mine .fb-reaction-count {
+      color: #1a73e8;
+    }
+    .fb-reaction-mine:hover {
+      background: #d2e3fc;
+      border-color: #1a73e8;
+    }
+    .fb-reaction-add {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 24px;
+      border-radius: 12px;
+      border: 1px solid #dadce0;
+      background: #f1f3f4;
+      color: #5f6368;
+      cursor: pointer;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .fb-reaction-add:hover {
+      border-color: #bdc1c6;
+      background: #e8eaed;
+    }
+    .fb-emoji-picker {
+      display: flex;
+      gap: 2px;
+      padding: 4px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .fb-emoji-option {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      line-height: 1;
+      color: #5f6368;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-emoji-option:hover {
+      background: #e8eaed;
+      color: #202124;
     }
     .fb-filter-section {
       margin-bottom: 12px;
