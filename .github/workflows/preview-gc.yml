@@ -1,0 +1,18 @@
+name: PR Preview Garbage Collection
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  garbage-collect:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run GC
+        run: ./scripts/preview-gc.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
