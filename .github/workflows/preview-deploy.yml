@@ -1,0 +1,17 @@
+name: PR Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deploy-preview:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy Preview
+        run: ./scripts/preview-deploy.sh ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
