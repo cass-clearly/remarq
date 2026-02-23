@@ -347,21 +347,31 @@ function buildCard(ann, isReply) {
   return card;
 }
 
-const EMOJI_SET = ["👍", "❤️", "👀", "🎉", "🤔", "😂"];
+const REACTION_ICONS = {
+  "👍": { label: "Like", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22V11l-5 0v11h5zm2-11l3.5-7a2 2 0 0 1 2-1.5c.8 0 1.5.7 1.5 1.5v5h4.5a2 2 0 0 1 2 2.2l-1.3 7a2 2 0 0 1-2 1.8H9z"/></svg>' },
+  "❤️": { label: "Love", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.3l7.8-7.8 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>' },
+  "👀": { label: "Seen", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' },
+  "🎉": { label: "Celebrate", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' },
+  "🤔": { label: "Question", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/></svg>' },
+  "😂": { label: "Funny", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>' },
+};
+const EMOJI_SET = Object.keys(REACTION_ICONS);
 
 function buildReactionBar(container, ann) {
   const reactions = ann.reactions || [];
   const commenter = getCommenter();
 
-  // Render existing reaction badges
+  // Render existing reaction badges (icon-style, like Google Docs)
   for (const r of reactions) {
     const badge = document.createElement("button");
     badge.className = "fb-reaction-badge";
-    if (commenter && r.authors.includes(commenter)) {
+    const isMine = commenter && r.authors.includes(commenter);
+    if (isMine) {
       badge.classList.add("fb-reaction-mine");
     }
-    badge.textContent = `${r.emoji} ${r.count}`;
-    badge.title = r.authors.join(", ");
+    const icon = REACTION_ICONS[r.emoji];
+    badge.innerHTML = `${icon ? icon.svg : r.emoji}<span class="fb-reaction-count">${r.count}</span>`;
+    badge.title = (icon ? icon.label + ": " : "") + r.authors.join(", ");
     badge.addEventListener("click", (e) => {
       e.stopPropagation();
       if (_onReaction) _onReaction(ann.id, r.emoji);
@@ -369,10 +379,10 @@ function buildReactionBar(container, ann) {
     container.appendChild(badge);
   }
 
-  // Smiley button to open picker
+  // Add-reaction button (muted icon style)
   const addBtn = document.createElement("button");
   addBtn.className = "fb-reaction-add";
-  addBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 14c1 2 7 2 8 0"/></svg>';
+  addBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="15" x2="16" y2="15"/><circle cx="9" cy="10" r="0.5" fill="currentColor"/><circle cx="15" cy="10" r="0.5" fill="currentColor"/></svg>';
   addBtn.title = "Add reaction";
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -390,9 +400,11 @@ function showEmojiPicker(container, ann, addBtn) {
   picker.className = "fb-emoji-picker";
 
   for (const emoji of EMOJI_SET) {
+    const icon = REACTION_ICONS[emoji];
     const btn = document.createElement("button");
     btn.className = "fb-emoji-option";
-    btn.textContent = emoji;
+    btn.innerHTML = icon.svg;
+    btn.title = icon.label;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       picker.remove();
@@ -886,41 +898,60 @@ function injectStyles() {
     .fb-reaction-badge {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       padding: 2px 8px;
       border-radius: 12px;
-      border: 1px solid #e5e7eb;
-      background: #f3f4f6;
-      font-size: 12px;
+      border: 1px solid #dadce0;
+      background: #f1f3f4;
+      font-size: 11px;
+      color: #5f6368;
       cursor: pointer;
       line-height: 1.4;
       font-family: inherit;
     }
+    .fb-reaction-badge svg {
+      color: #5f6368;
+      flex-shrink: 0;
+    }
+    .fb-reaction-count {
+      font-size: 11px;
+      color: #5f6368;
+    }
     .fb-reaction-badge:hover {
-      border-color: #7c3aed;
-      background: rgba(124,58,237,0.15);
+      border-color: #bdc1c6;
+      background: #e8eaed;
     }
     .fb-reaction-mine {
-      border-color: #7c3aed;
-      background: rgba(124,58,237,0.15);
+      border-color: #1a73e8;
+      background: #e8f0fe;
+    }
+    .fb-reaction-mine svg {
+      color: #1a73e8;
+    }
+    .fb-reaction-mine .fb-reaction-count {
+      color: #1a73e8;
+    }
+    .fb-reaction-mine:hover {
+      background: #d2e3fc;
+      border-color: #1a73e8;
     }
     .fb-reaction-add {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 30px;
-      height: 28px;
-      border-radius: 14px;
-      border: 1px solid #d1d5db;
-      background: #f9fafb;
-      font-size: 16px;
+      width: 28px;
+      height: 24px;
+      border-radius: 12px;
+      border: 1px solid #dadce0;
+      background: #f1f3f4;
+      color: #5f6368;
       cursor: pointer;
       line-height: 1;
       font-family: inherit;
     }
     .fb-reaction-add:hover {
-      border-color: #7c3aed;
-      background: rgba(124,58,237,0.1);
+      border-color: #bdc1c6;
+      background: #e8eaed;
     }
     .fb-emoji-picker {
       display: flex;
@@ -934,14 +965,18 @@ function injectStyles() {
     .fb-emoji-option {
       background: none;
       border: none;
-      font-size: 16px;
       cursor: pointer;
-      padding: 4px;
+      padding: 6px;
       border-radius: 4px;
       line-height: 1;
+      color: #5f6368;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .fb-emoji-option:hover {
-      background: #f3f4f6;
+      background: #e8eaed;
+      color: #202124;
     }
     .fb-filter-section {
       margin-bottom: 12px;
