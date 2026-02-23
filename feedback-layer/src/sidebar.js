@@ -12,7 +12,7 @@ import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
-import { getFocusableElements, wrapIndex } from "./utils/keyboard-nav.js";
+import { wrapIndex } from "./utils/keyboard-nav.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -143,6 +143,9 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+
+  // Global keyboard shortcut: "s" to toggle sidebar
+  document.addEventListener("keydown", _handleGlobalKeydown);
 }
 
 export function openSidebar() {
@@ -165,13 +168,15 @@ export function closeSidebar() {
 }
 
 function _isInputFocused() {
-  const tag = document.activeElement?.tagName;
-  return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT";
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || el.isContentEditable;
 }
 
 function _getThreadCards() {
   if (!_listEl) return [];
-  return Array.from(_listEl.querySelectorAll(".fb-thread > .fb-cmt-card"));
+  return Array.from(_listEl.querySelectorAll(".fb-thread > .fb-cmt-card:first-child"));
 }
 
 function _setActiveThread(index) {
@@ -197,32 +202,18 @@ function _setActiveThread(index) {
 function _handleSidebarKeydown(e) {
   // Skip when sidebar is closed
   if (_sidebar.classList.contains("fb-sidebar-collapsed")) return;
-  // Skip when typing in an input
-  if (_isInputFocused()) return;
 
   const key = e.key;
 
+  // ESC always works, even when typing in an input
   if (key === "Escape") {
     e.preventDefault();
     closeSidebar();
     return;
   }
 
-  if (key === "Tab") {
-    // Trap focus within sidebar
-    const focusable = getFocusableElements(_sidebar);
-    if (focusable.length === 0) return;
-    const currentIndex = focusable.indexOf(document.activeElement);
-    let nextIndex;
-    if (e.shiftKey) {
-      nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
-    } else {
-      nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
-    }
-    e.preventDefault();
-    focusable[nextIndex].focus();
-    return;
-  }
+  // Skip other shortcuts when typing in an input
+  if (_isInputFocused()) return;
 
   if (key === "Enter") {
     const cards = _getThreadCards();
@@ -277,6 +268,7 @@ function _toggleShortcutsHelp() {
     <div class="fb-shortcuts-body">
       <table class="fb-shortcuts-table">
         <tbody>
+          <tr><td><kbd>s</kbd></td><td>Toggle sidebar open/closed</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Close sidebar</td></tr>
           <tr><td><kbd>j</kbd></td><td>Next comment thread</td></tr>
           <tr><td><kbd>k</kbd></td><td>Previous comment thread</td></tr>
@@ -296,6 +288,22 @@ function _toggleShortcutsHelp() {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   modal.querySelector(".fb-shortcuts-close").focus();
+}
+
+function _handleGlobalKeydown(e) {
+  if (_isInputFocused()) return;
+  if (e.key === "s") {
+    e.preventDefault();
+    _toggleSidebar();
+  }
+}
+
+function _toggleSidebar() {
+  if (_sidebar.classList.contains("fb-sidebar-collapsed")) {
+    openSidebar();
+  } else {
+    closeSidebar();
+  }
 }
 
 function _attachKeyboardHandler() {

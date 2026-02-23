@@ -182,19 +182,19 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 
 ## Keyboard Shortcuts
 
-When the sidebar is open, the following keyboard shortcuts are available:
+The following keyboard shortcuts are available (they are disabled when focus is in an input field, textarea, or contenteditable element):
 
 | Key | Action |
 |-----|--------|
+| `s` | Toggle sidebar open/closed |
 | `Esc` | Close the sidebar |
-| `↓` / `j` | Move to next comment thread |
-| `↑` / `k` | Move to previous comment thread |
+| `j` | Move to next comment thread |
+| `k` | Move to previous comment thread |
 | `Enter` | Reply to the focused comment thread |
-| `Tab` / `Shift+Tab` | Cycle focus between sidebar controls (focus is trapped within the sidebar) |
 | `Cmd+Enter` / `Ctrl+Enter` | Submit a comment or reply (when typing in a text field) |
 | `?` | Toggle keyboard shortcuts help |
 
-Tabbing to a comment thread also scrolls the corresponding highlighted text into view in the document. Press the `⌨` button in the sidebar header to see shortcuts at any time.
+Press the `⌨` button in the sidebar header to see shortcuts at any time.
 
 ## The Bottom Line
 
