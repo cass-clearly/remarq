@@ -42,6 +42,9 @@ async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Add sort_order column for manual reordering (idempotent)
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT NULL`);
+
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
@@ -62,6 +65,7 @@ function formatComment(row) {
     quote: row.quote || null, prefix: row.prefix || null, suffix: row.suffix || null,
     body: row.body, author: row.author, status: row.parent ? null : row.status,
     parent: row.parent || null,
+    sort_order: row.sort_order != null ? row.sort_order : null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -255,7 +259,7 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
 
-  const { body, status } = req.body;
+  const { body, status, sort_order } = req.body;
 
   if (status !== undefined && rows[0].parent) {
     return res.status(400).json(errorResponse("status cannot be set on replies"));
@@ -265,11 +269,18 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
   }
 
+  if (sort_order !== undefined && sort_order !== null && (!Number.isInteger(sort_order) || sort_order < 0)) {
+    return res.status(400).json(errorResponse("sort_order must be a non-negative integer or null"));
+  }
+
   if (body !== undefined) {
     await pool.query("UPDATE comments SET body = $1 WHERE id = $2", [sanitize(body), req.params.id]);
   }
   if (status !== undefined) {
     await pool.query("UPDATE comments SET status = $1 WHERE id = $2", [status, req.params.id]);
+  }
+  if (sort_order !== undefined) {
+    await pool.query("UPDATE comments SET sort_order = $1 WHERE id = $2", [sort_order, req.params.id]);
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
@@ -281,6 +292,37 @@ app.delete("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   res.json(formatComment(rows[0]));
+}));
+
+// ── Reorder endpoint ─────────────────────────────────────────────────
+
+app.post("/comments/reorder", asyncHandler(async (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) {
+    return res.status(400).json(errorResponse("order must be an array of {id, sort_order}"));
+  }
+
+  for (const entry of order) {
+    if (!entry.id || !Number.isInteger(entry.sort_order) || entry.sort_order < 0) {
+      return res.status(400).json(errorResponse("each entry must have id (string) and sort_order (non-negative integer)"));
+    }
+  }
+
+  // Verify all comments exist
+  const ids = order.map((e) => e.id);
+  const { rows: found } = await pool.query(
+    "SELECT id FROM comments WHERE id = ANY($1)", [ids]
+  );
+  if (found.length !== ids.length) {
+    return res.status(404).json(errorResponse("one or more comments not found"));
+  }
+
+  // Batch update sort_order
+  for (const entry of order) {
+    await pool.query("UPDATE comments SET sort_order = $1 WHERE id = $2", [entry.sort_order, entry.id]);
+  }
+
+  res.json({ ok: true });
 }));
 
 // ── Static files ────────────────────────────────────────────────────

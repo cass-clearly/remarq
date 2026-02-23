@@ -225,6 +225,73 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── recalculateSortOrder ──────────────────────────────────────────────
+
+describe("recalculateSortOrder", async () => {
+  const { recalculateSortOrder } = await import("../src/utils/reorder.js");
+
+  it("moves item from index 0 to index 2", () => {
+    const comments = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const result = recalculateSortOrder(comments, 0, 2);
+    assert.deepEqual(result, [
+      { id: "b", sortOrder: 0 },
+      { id: "c", sortOrder: 1 },
+      { id: "a", sortOrder: 2 },
+    ]);
+  });
+
+  it("moves item from index 2 to index 0", () => {
+    const comments = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const result = recalculateSortOrder(comments, 2, 0);
+    assert.deepEqual(result, [
+      { id: "c", sortOrder: 0 },
+      { id: "a", sortOrder: 1 },
+      { id: "b", sortOrder: 2 },
+    ]);
+  });
+
+  it("returns empty array when from equals to", () => {
+    const comments = [{ id: "a" }, { id: "b" }];
+    const result = recalculateSortOrder(comments, 1, 1);
+    assert.deepEqual(result, []);
+  });
+
+  it("returns empty array for out-of-bounds fromIndex", () => {
+    const comments = [{ id: "a" }];
+    assert.deepEqual(recalculateSortOrder(comments, -1, 0), []);
+    assert.deepEqual(recalculateSortOrder(comments, 5, 0), []);
+  });
+
+  it("returns empty array for out-of-bounds toIndex", () => {
+    const comments = [{ id: "a" }];
+    assert.deepEqual(recalculateSortOrder(comments, 0, -1), []);
+    assert.deepEqual(recalculateSortOrder(comments, 0, 5), []);
+  });
+
+  it("handles single-element array (same index)", () => {
+    const comments = [{ id: "a" }];
+    assert.deepEqual(recalculateSortOrder(comments, 0, 0), []);
+  });
+
+  it("swaps adjacent items", () => {
+    const comments = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const result = recalculateSortOrder(comments, 0, 1);
+    assert.deepEqual(result, [
+      { id: "b", sortOrder: 0 },
+      { id: "a", sortOrder: 1 },
+      { id: "c", sortOrder: 2 },
+    ]);
+  });
+
+  it("does not mutate the original array", () => {
+    const comments = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    recalculateSortOrder(comments, 0, 2);
+    assert.equal(comments[0].id, "a");
+    assert.equal(comments[1].id, "b");
+    assert.equal(comments[2].id, "c");
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {

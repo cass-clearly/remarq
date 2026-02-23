@@ -864,6 +864,158 @@ describe("API", async () => {
     });
   });
 
+  describe("PATCH /comments/:id sort_order", () => {
+    it("updates sort_order", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/sort", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: 5 }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.sort_order, 5);
+    });
+
+    it("clears sort_order with null", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/sort-null", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: 3 }),
+      });
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: null }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.sort_order, null);
+    });
+
+    it("returns 400 for negative sort_order", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/sort-neg", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: -1 }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 400 for non-integer sort_order", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/sort-float", quote: "q", body: "b", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/${cmt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: 1.5 }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("new comments have sort_order null by default", async () => {
+      const cmt = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/sort-default", quote: "q", body: "b", author: "a" }),
+      })).json();
+      assert.equal(cmt.sort_order, null);
+    });
+  });
+
+  describe("POST /comments/reorder", () => {
+    it("batch updates sort_order for multiple comments", async () => {
+      const uri = "https://example.com/reorder-batch";
+      const c1 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q1", body: "first", author: "a" }),
+      })).json();
+      const c2 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q2", body: "second", author: "a" }),
+      })).json();
+      const c3 = await (await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri, quote: "q3", body: "third", author: "a" }),
+      })).json();
+
+      const res = await fetch(`${BASE}/comments/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order: [
+            { id: c3.id, sort_order: 0 },
+            { id: c1.id, sort_order: 1 },
+            { id: c2.id, sort_order: 2 },
+          ],
+        }),
+      });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.deepEqual(json, { ok: true });
+
+      // Verify sort_order values
+      const check1 = await (await fetch(`${BASE}/comments/${c1.id}`)).json();
+      const check2 = await (await fetch(`${BASE}/comments/${c2.id}`)).json();
+      const check3 = await (await fetch(`${BASE}/comments/${c3.id}`)).json();
+      assert.equal(check1.sort_order, 1);
+      assert.equal(check2.sort_order, 2);
+      assert.equal(check3.sort_order, 0);
+    });
+
+    it("returns 400 when order is not an array", async () => {
+      const res = await fetch(`${BASE}/comments/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: "invalid" }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 400 when entry has invalid sort_order", async () => {
+      const res = await fetch(`${BASE}/comments/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: [{ id: "cmt_x", sort_order: -1 }] }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 404 when a comment ID does not exist", async () => {
+      const res = await fetch(`${BASE}/comments/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: [{ id: "cmt_nonexistent", sort_order: 0 }] }),
+      });
+      assert.equal(res.status, 404);
+    });
+  });
+
   describe("DELETE /comments/:id", () => {
     it("deletes comment and cascades replies", async () => {
       const parent = await fetch(`${BASE}/comments`, {

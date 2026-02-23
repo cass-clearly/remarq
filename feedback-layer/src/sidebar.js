@@ -12,6 +12,7 @@ import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
+import { recalculateSortOrder } from "./utils/reorder.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -25,7 +26,10 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onReorder = null;
 let _showResolved = false;
+let _sortMode = "document"; // "document" or "custom"
+let _draggedId = null;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
 
@@ -42,13 +46,15 @@ export function getCommenter() {
  * @param {Function} opts.onResolve - Called with (commentId, resolved) when resolve toggled
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
+ * @param {Function} opts.onReorder - Called with [{id, sortOrder}] when comments are reordered
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReorder }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onReorder = onReorder;
 
   injectStyles();
 
@@ -71,10 +77,16 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
                value="${escapeHtml(getCommenter())}">
       </div>
       <div class="fb-filter-section">
-        <label class="fb-filter-toggle">
-          <input type="checkbox" class="fb-show-resolved-cb">
-          <span>Show closed</span>
-        </label>
+        <div class="fb-filter-row">
+          <label class="fb-filter-toggle">
+            <input type="checkbox" class="fb-show-resolved-cb">
+            <span>Show closed</span>
+          </label>
+          <button class="fb-sort-toggle" title="Toggle sort order">
+            <span class="fb-sort-icon">&#x1F4CD;</span>
+            <span class="fb-sort-label">Doc order</span>
+          </button>
+        </div>
       </div>
       <div class="fb-comment-list"></div>
       <div class="fb-form-section" style="display:none"></div>
@@ -116,6 +128,28 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+
+  // Sort toggle
+  const sortToggle = _sidebar.querySelector(".fb-sort-toggle");
+  sortToggle.addEventListener("click", () => {
+    const newMode = _sortMode === "document" ? "custom" : "document";
+    setSortMode(newMode);
+    if (_onReorder) _onReorder(null); // signal mode change to parent (null = just re-render)
+  });
+}
+
+export function getSortMode() {
+  return _sortMode;
+}
+
+export function setSortMode(mode) {
+  _sortMode = mode;
+  const toggle = _sidebar?.querySelector(".fb-sort-toggle");
+  if (toggle) {
+    toggle.querySelector(".fb-sort-icon").textContent = mode === "custom" ? "\u{1F522}" : "\u{1F4CD}";
+    toggle.querySelector(".fb-sort-label").textContent = mode === "custom" ? "Custom order" : "Doc order";
+    toggle.classList.toggle("fb-sort-toggle-active", mode === "custom");
+  }
 }
 
 export function openSidebar() {
@@ -203,17 +237,28 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
 
   const { topLevel, repliesByParent } = threadComments(comments);
 
-  // Sort top-level comments by document position
-  const sortedTopLevel = topLevel.slice().sort((a, b) => {
-    const rangeA = commentRanges.get(a.id);
-    const rangeB = commentRanges.get(b.id);
+  let sortedTopLevel;
+  if (_sortMode === "custom") {
+    // Sort by sort_order (null values go last), then by created_at
+    sortedTopLevel = topLevel.slice().sort((a, b) => {
+      const aOrder = a.sort_order != null ? a.sort_order : Infinity;
+      const bOrder = b.sort_order != null ? b.sort_order : Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return new Date(a.created_at) - new Date(b.created_at);
+    });
+  } else {
+    // Sort top-level comments by document position
+    sortedTopLevel = topLevel.slice().sort((a, b) => {
+      const rangeA = commentRanges.get(a.id);
+      const rangeB = commentRanges.get(b.id);
 
-    // If either doesn't have a range, keep original order
-    if (!rangeA || !rangeB) return 0;
+      // If either doesn't have a range, keep original order
+      if (!rangeA || !rangeB) return 0;
 
-    // Compare positions using Range.compareBoundaryPoints
-    return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
-  });
+      // Compare positions using Range.compareBoundaryPoints
+      return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
+    });
+  }
 
   // Filter to only show comments that:
   // 1. Successfully anchored (text found in document), OR
@@ -252,9 +297,72 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
     return;
   }
 
-  for (const ann of visibleTopLevel) {
+  for (let i = 0; i < visibleTopLevel.length; i++) {
+    const ann = visibleTopLevel[i];
     const thread = document.createElement("div");
     thread.className = "fb-thread";
+    thread.dataset.commentId = ann.id;
+    thread.dataset.index = i;
+
+    // Enable drag-and-drop in custom sort mode
+    if (_sortMode === "custom") {
+      thread.draggable = true;
+      thread.addEventListener("dragstart", (e) => {
+        _draggedId = ann.id;
+        thread.classList.add("fb-thread-dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", ann.id);
+      });
+      thread.addEventListener("dragend", () => {
+        _draggedId = null;
+        thread.classList.remove("fb-thread-dragging");
+        _listEl.querySelectorAll(".fb-thread-drop-above, .fb-thread-drop-below").forEach(
+          (el) => { el.classList.remove("fb-thread-drop-above", "fb-thread-drop-below"); }
+        );
+      });
+      thread.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!_draggedId || _draggedId === ann.id) return;
+        const rect = thread.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        // Clear previous indicators on this element
+        thread.classList.remove("fb-thread-drop-above", "fb-thread-drop-below");
+        if (e.clientY < midY) {
+          thread.classList.add("fb-thread-drop-above");
+        } else {
+          thread.classList.add("fb-thread-drop-below");
+        }
+      });
+      thread.addEventListener("dragleave", () => {
+        thread.classList.remove("fb-thread-drop-above", "fb-thread-drop-below");
+      });
+      thread.addEventListener("drop", (e) => {
+        e.preventDefault();
+        thread.classList.remove("fb-thread-drop-above", "fb-thread-drop-below");
+        const draggedCommentId = e.dataTransfer.getData("text/plain");
+        if (!draggedCommentId || draggedCommentId === ann.id) return;
+
+        const fromIndex = visibleTopLevel.findIndex((c) => c.id === draggedCommentId);
+        const rect = thread.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        let toIndex = parseInt(thread.dataset.index, 10);
+        // If dropping below the midpoint and dragging from above, adjust target
+        if (e.clientY >= midY && fromIndex < toIndex) {
+          // Already correct
+        } else if (e.clientY < midY && fromIndex > toIndex) {
+          // Already correct
+        } else if (e.clientY >= midY) {
+          toIndex = Math.min(toIndex + 1, visibleTopLevel.length - 1);
+        } else {
+          toIndex = Math.max(toIndex - 1, 0);
+        }
+
+        if (fromIndex === toIndex) return;
+        const updates = recalculateSortOrder(visibleTopLevel, fromIndex, toIndex);
+        if (_onReorder && updates.length > 0) _onReorder(updates);
+      });
+    }
 
     thread.appendChild(buildCard(ann, false));
 
@@ -286,7 +394,12 @@ function buildCard(ann, isReply) {
     + (isReply ? " fb-cmt-reply" : "");
   card.dataset.id = ann.id;
 
+  const dragHandleHtml = (_sortMode === "custom" && !isReply)
+    ? '<span class="fb-drag-handle" title="Drag to reorder">&#x2630;</span>'
+    : '';
+
   card.innerHTML = `
+    ${dragHandleHtml}
     <div class="fb-cmt-body">${escapeHtml(ann.body)}</div>
     <div class="fb-cmt-meta">
       <span class="fb-cmt-author">${escapeHtml(ann.author)}</span>
@@ -299,7 +412,7 @@ function buildCard(ann, isReply) {
 
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit")) return;
+      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-drag-handle")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -647,6 +760,64 @@ function injectStyles() {
     }
     .fb-filter-section {
       margin-bottom: 12px;
+    }
+    .fb-drag-handle {
+      display: block;
+      cursor: grab;
+      color: var(--remarq-icon-faint, #ccc);
+      font-size: 12px;
+      line-height: 1;
+      padding: 0 0 4px;
+      user-select: none;
+      letter-spacing: 2px;
+    }
+    .fb-drag-handle:hover {
+      color: var(--remarq-accent, #7c3aed);
+    }
+    .fb-drag-handle:active {
+      cursor: grabbing;
+    }
+    .fb-thread-dragging {
+      opacity: 0.4;
+    }
+    .fb-thread-drop-above {
+      border-top: 2px solid var(--remarq-accent, #7c3aed);
+    }
+    .fb-thread-drop-below {
+      border-bottom: 2px solid var(--remarq-accent, #7c3aed);
+    }
+    .fb-filter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .fb-sort-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: 1px solid var(--remarq-border-input, #d1d5db);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--remarq-text-muted, #999);
+      font-family: inherit;
+    }
+    .fb-sort-toggle:hover {
+      border-color: var(--remarq-accent, #7c3aed);
+      color: var(--remarq-accent, #7c3aed);
+    }
+    .fb-sort-toggle-active {
+      border-color: var(--remarq-accent, #7c3aed);
+      background: var(--remarq-accent-ring, rgba(124,58,237,0.15));
+      color: var(--remarq-accent, #7c3aed);
+    }
+    .fb-sort-icon {
+      font-size: 12px;
+    }
+    .fb-sort-label {
+      font-size: 11px;
     }
     .fb-filter-toggle {
       display: flex;
