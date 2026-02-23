@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Pre-commit hook: rebuild feedback-layer bundle when source files change
+
+staged_src=$(git diff --cached --name-only -- 'feedback-layer/src/')
+
+if [ -z "$staged_src" ]; then
+  exit 0
+fi
+
+echo "feedback-layer/src/ changes detected — rebuilding bundle..."
+
+cd feedback-layer && npm run build
+if [ $? -ne 0 ]; then
+  echo "ERROR: feedback-layer build failed. Commit aborted."
+  exit 1
+fi
+
+cd ..
+git add serve/feedback-layer.js

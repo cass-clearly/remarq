@@ -5,6 +5,7 @@
   "license": "AGPL-3.0",
   "description": "Drop-in annotation and comment layer for any HTML page.",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "start": "node server/index.js",
     "postinstall": "npm install --prefix server",
     "build": "npm install --prefix feedback-layer && node feedback-layer/build.js && cp feedback-layer/dist/feedback-layer.js serve/feedback-layer.js",
