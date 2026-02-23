@@ -25,6 +25,7 @@ let _onDelete = null;
 let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
+let _onReaction = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
@@ -42,13 +43,15 @@ export function getCommenter() {
  * @param {Function} opts.onResolve - Called with (commentId, resolved) when resolve toggled
  * @param {Function} opts.onReply - Called with {parent_id, comment, commenter} when reply submitted
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
+ * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
+  _onReaction = onReaction;
 
   injectStyles();
 
@@ -295,11 +298,16 @@ function buildCard(ann, isReply) {
       ${!isReply ? `<button class="fb-cmt-resolve" title="${isClosed ? "Reopen" : "Resolve"}">${isClosed ? "&#x21a9;" : "&#x2713;"}</button>` : ""}
       <button class="fb-cmt-delete" title="Delete">&times;</button>
     </div>
+    <div class="fb-reactions"></div>
   `;
+
+  // Build reaction bar
+  const reactionsEl = card.querySelector(".fb-reactions");
+  buildReactionBar(reactionsEl, ann);
 
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit")) return;
+      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-reactions")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -325,6 +333,72 @@ function buildCard(ann, isReply) {
   });
 
   return card;
+}
+
+const EMOJI_SET = ["👍", "❤️", "👀", "🎉", "🤔", "😂"];
+
+function buildReactionBar(container, ann) {
+  const reactions = ann.reactions || [];
+  const commenter = getCommenter();
+
+  // Render existing reaction badges
+  for (const r of reactions) {
+    const badge = document.createElement("button");
+    badge.className = "fb-reaction-badge";
+    if (commenter && r.authors.includes(commenter)) {
+      badge.classList.add("fb-reaction-mine");
+    }
+    badge.textContent = `${r.emoji} ${r.count}`;
+    badge.title = r.authors.join(", ");
+    badge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (_onReaction) _onReaction(ann.id, r.emoji);
+    });
+    container.appendChild(badge);
+  }
+
+  // "+" button to open picker
+  const addBtn = document.createElement("button");
+  addBtn.className = "fb-reaction-add";
+  addBtn.textContent = "+";
+  addBtn.title = "Add reaction";
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showEmojiPicker(container, ann, addBtn);
+  });
+  container.appendChild(addBtn);
+}
+
+function showEmojiPicker(container, ann, addBtn) {
+  // Remove existing picker if open
+  const existing = container.querySelector(".fb-emoji-picker");
+  if (existing) { existing.remove(); return; }
+
+  const picker = document.createElement("div");
+  picker.className = "fb-emoji-picker";
+
+  for (const emoji of EMOJI_SET) {
+    const btn = document.createElement("button");
+    btn.className = "fb-emoji-option";
+    btn.textContent = emoji;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      picker.remove();
+      if (_onReaction) _onReaction(ann.id, emoji);
+    });
+    picker.appendChild(btn);
+  }
+
+  container.insertBefore(picker, addBtn.nextSibling);
+
+  // Dismiss on outside click
+  const dismiss = (e) => {
+    if (!picker.contains(e.target) && e.target !== addBtn) {
+      picker.remove();
+      document.removeEventListener("click", dismiss, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", dismiss, true), 0);
 }
 
 function showReplyForm(parentId, threadEl, replyBtn) {
@@ -644,6 +718,74 @@ function injectStyles() {
     }
     .fb-cmt-closed .fb-cmt-resolve {
       color: #16a34a;
+    }
+    .fb-reactions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .fb-reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      background: #f3f4f6;
+      font-size: 12px;
+      cursor: pointer;
+      line-height: 1.4;
+      font-family: inherit;
+    }
+    .fb-reaction-badge:hover {
+      border-color: #7c3aed;
+      background: rgba(124,58,237,0.15);
+    }
+    .fb-reaction-mine {
+      border-color: #7c3aed;
+      background: rgba(124,58,237,0.15);
+    }
+    .fb-reaction-add {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 22px;
+      border-radius: 12px;
+      border: 1px dashed #e5e7eb;
+      background: none;
+      font-size: 14px;
+      cursor: pointer;
+      color: #999;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .fb-reaction-add:hover {
+      border-color: #7c3aed;
+      color: #7c3aed;
+    }
+    .fb-emoji-picker {
+      display: flex;
+      gap: 2px;
+      padding: 4px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .fb-emoji-option {
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .fb-emoji-option:hover {
+      background: #f3f4f6;
     }
     .fb-filter-section {
       margin-bottom: 12px;

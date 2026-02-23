@@ -15,7 +15,7 @@
  * dev → staging → production).
  */
 
-import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus } from "./api.js";
+import { setBaseUrl, fetchComments, createComment, updateComment, deleteComment, updateCommentStatus, addReaction, removeReaction } from "./api.js";
 import { selectorFromRange, rangeFromSelector } from "./anchoring.js";
 import {
   highlightRange,
@@ -101,6 +101,7 @@ function init() {
         onResolve: handleResolve,
         onReply: handleReply,
         onEdit: handleEdit,
+        onReaction: handleReaction,
       });
 
       // Highlight click → scroll sidebar to card
@@ -345,6 +346,32 @@ async function handleEdit(commentId, comment) {
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
+  }
+}
+
+async function handleReaction(commentId, emoji) {
+  const commenter = getCommenter();
+  if (!commenter) return;
+
+  try {
+    const comment = _comments.find((c) => c.id === commentId);
+    const existing = comment?.reactions?.find((r) => r.emoji === emoji);
+    const alreadyReacted = existing?.authors.includes(commenter);
+
+    let result;
+    if (alreadyReacted) {
+      result = await removeReaction(commentId, emoji, commenter);
+    } else {
+      result = await addReaction(commentId, emoji, commenter);
+    }
+
+    // Update local comment's reactions
+    const idx = _comments.findIndex((c) => c.id === commentId);
+    if (idx !== -1) _comments[idx] = { ..._comments[idx], reactions: result.reactions };
+    renderComments(_comments, _anchoredIds, _commentRanges);
+  } catch (err) {
+    console.error("[feedback-layer] Failed to toggle reaction:", err);
+    showToast(`Failed to update reaction: ${err.message}`, "error");
   }
 }
 

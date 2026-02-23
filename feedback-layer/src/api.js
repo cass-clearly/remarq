@@ -82,3 +82,22 @@ export async function deleteComment(id) {
   });
   await throwIfNotOk(res, "Failed to delete comment");
 }
+
+export async function addReaction(commentId, emoji, author) {
+  const res = await fetch(`${_baseUrl}/comments/${commentId}/reactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ emoji, author }),
+  });
+  await throwIfNotOk(res, "Failed to add reaction");
+  return res.json();
+}
+
+export async function removeReaction(commentId, emoji, author) {
+  const res = await fetch(
+    `${_baseUrl}/comments/${commentId}/reactions/${encodeURIComponent(emoji)}?author=${encodeURIComponent(author)}`,
+    { method: "DELETE" }
+  );
+  await throwIfNotOk(res, "Failed to remove reaction");
+  return res.json();
+}
