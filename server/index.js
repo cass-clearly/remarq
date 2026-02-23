@@ -1,15 +1,28 @@
 #!/usr/bin/env node
 const express = require("express");
 const cors = require("cors");
+const session = require("express-session");
+const { randomBytes } = require("crypto");
 const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { createAdminRouter } = require("./routes/admin.js");
 const path = require("path");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use(
+  "/admin",
+  session({
+    secret: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, sameSite: "lax" },
+  })
+);
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres@localhost/postgres";
 const pool = new Pool({ connectionString: DATABASE_URL });
@@ -45,6 +58,19 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moderation_log (
+      id              SERIAL PRIMARY KEY,
+      comment_id      TEXT NOT NULL,
+      document_id     TEXT NOT NULL,
+      action          TEXT NOT NULL,
+      reason          TEXT,
+      comment_body    TEXT,
+      comment_author  TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -282,6 +308,11 @@ app.delete("/comments/:id", asyncHandler(async (req, res) => {
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
   res.json(formatComment(rows[0]));
 }));
+
+// ── Admin dashboard ─────────────────────────────────────────────────
+
+app.use("/admin", express.static(path.join(__dirname, "public")));
+app.use("/admin", createAdminRouter(pool));
 
 // ── Static files ────────────────────────────────────────────────────
 

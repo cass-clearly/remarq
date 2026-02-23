@@ -1,6 +1,9 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
+// Set ADMIN_PASSWORD for admin dashboard tests
+process.env.ADMIN_PASSWORD = "test-admin-pw";
+
 // ── Utility unit tests ──────────────────────────────────────────────
 
 describe("generate-id", async () => {
@@ -102,6 +105,52 @@ describe("sanitize", async () => {
   });
 });
 
+// ── Admin view helpers ──────────────────────────────────────────────
+
+describe("admin views", async () => {
+  const { escapeHtml, timeAgo } = await import("./views/admin.js");
+
+  it("escapeHtml escapes special characters", () => {
+    assert.equal(escapeHtml('<script>"&'), "&lt;script&gt;&quot;&amp;");
+  });
+
+  it("escapeHtml handles empty/null input", () => {
+    assert.equal(escapeHtml(""), "");
+    assert.equal(escapeHtml(null), "");
+    assert.equal(escapeHtml(undefined), "");
+  });
+
+  it("timeAgo returns just now for recent dates", () => {
+    assert.equal(timeAgo(new Date().toISOString()), "just now");
+  });
+
+  it("timeAgo returns minutes ago", () => {
+    const d = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "5m ago");
+  });
+
+  it("timeAgo returns hours ago", () => {
+    const d = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "3h ago");
+  });
+
+  it("timeAgo returns days ago", () => {
+    const d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    assert.equal(timeAgo(d), "7d ago");
+  });
+});
+
+// ── Auth middleware ─────────────────────────────────────────────────
+
+describe("auth middleware", async () => {
+  const { checkPassword } = await import("./middleware/auth.js");
+
+  it("checkPassword returns false for empty input", () => {
+    assert.equal(checkPassword(""), false);
+    assert.equal(checkPassword(null), false);
+  });
+});
+
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
@@ -126,6 +175,8 @@ describe("API", async () => {
   });
 
   beforeEach(async () => {
+    await pool.query("DELETE FROM moderation_log");
+    await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
   });
@@ -893,6 +944,235 @@ describe("API", async () => {
     it("returns 404 for missing comment", async () => {
       const res = await fetch(`${BASE}/comments/cmt_nonexistent`, { method: "DELETE" });
       assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Admin dashboard ──────────────────────────────────────────────
+
+  describe("Admin dashboard", () => {
+
+    // Helper: extract Set-Cookie header from response
+    function getCookie(res) {
+      const raw = res.headers.get("set-cookie");
+      if (!raw) return "";
+      return raw.split(";")[0];
+    }
+
+    // Helper: login and return session cookie
+    async function adminLogin() {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=test-admin-pw",
+        redirect: "manual",
+      });
+      return getCookie(res);
+    }
+
+    it("GET /admin redirects to login when unauthenticated", async () => {
+      const res = await fetch(`${BASE}/admin/`, { redirect: "manual" });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/login"));
+    });
+
+    it("GET /admin/login returns login page", async () => {
+      const res = await fetch(`${BASE}/admin/login`);
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("Remarq Admin"));
+      assert.ok(html.includes('type="password"'));
+    });
+
+    it("POST /admin/login rejects wrong password", async () => {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=wrong",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 401);
+      const html = await res.text();
+      assert.ok(html.includes("Invalid password"));
+    });
+
+    it("POST /admin/login accepts correct password and redirects", async () => {
+      const res = await fetch(`${BASE}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "password=test-admin-pw",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/documents"));
+      assert.ok(getCookie(res));
+    });
+
+    it("GET /admin/documents shows document list when authenticated", async () => {
+      const cookie = await adminLogin();
+
+      // Create a document with a comment
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-test" }),
+      });
+      const doc = await docRes.json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "test comment", author: "admin-tester" }),
+      });
+
+      const res = await fetch(`${BASE}/admin/documents`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("example.com/admin-test"));
+      assert.ok(html.includes("Documents"));
+    });
+
+    it("GET /admin/documents/:id shows document detail with comments", async () => {
+      const cookie = await adminLogin();
+
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-detail" }),
+      });
+      const doc = await docRes.json();
+      await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "quoted text", body: "detail comment", author: "tester" }),
+      });
+
+      const res = await fetch(`${BASE}/admin/documents/${doc.id}`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes("admin-detail"));
+      assert.ok(html.includes("detail comment"));
+      assert.ok(html.includes("tester"));
+      assert.ok(html.includes("quoted text"));
+    });
+
+    it("GET /admin/documents/:id returns 404 for missing document", async () => {
+      const cookie = await adminLogin();
+      const res = await fetch(`${BASE}/admin/documents/doc_nonexistent`, {
+        headers: { Cookie: cookie },
+      });
+      assert.equal(res.status, 404);
+    });
+
+    it("POST /admin/comments/:id/delete deletes comment with CSRF and logs moderation", async () => {
+      const cookie = await adminLogin();
+
+      // Create a comment
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-delete" }),
+      });
+      const doc = await docRes.json();
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "spam comment", author: "spammer" }),
+      });
+      const cmt = await cmtRes.json();
+
+      // Load the document detail page to get the CSRF token
+      const detailRes = await fetch(`${BASE}/admin/documents/${doc.id}`, {
+        headers: { Cookie: cookie },
+      });
+      const html = await detailRes.text();
+      const csrfMatch = html.match(/name="_csrf" value="([^"]+)"/);
+      assert.ok(csrfMatch, "CSRF token should be present in form");
+      const csrfToken = csrfMatch[1];
+
+      // Delete the comment
+      const delRes = await fetch(`${BASE}/admin/comments/${cmt.id}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie,
+        },
+        body: `_csrf=${csrfToken}&reason=spam`,
+        redirect: "manual",
+      });
+      assert.equal(delRes.status, 302);
+
+      // Verify comment is deleted
+      const getRes = await fetch(`${BASE}/comments/${cmt.id}`);
+      assert.equal(getRes.status, 404);
+
+      // Verify moderation log entry
+      const { rows } = await pool.query(
+        "SELECT * FROM moderation_log WHERE comment_id = $1",
+        [cmt.id]
+      );
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].action, "delete");
+      assert.equal(rows[0].reason, "spam");
+      assert.equal(rows[0].comment_author, "spammer");
+    });
+
+    it("POST /admin/comments/:id/delete rejects without CSRF token", async () => {
+      const cookie = await adminLogin();
+
+      const docRes = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/admin-csrf" }),
+      });
+      const doc = await docRes.json();
+      const cmtRes = await fetch(`${BASE}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc.id, quote: "q", body: "b", author: "a" }),
+      });
+      const cmt = await cmtRes.json();
+
+      const res = await fetch(`${BASE}/admin/comments/${cmt.id}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie,
+        },
+        body: "reason=test",
+        redirect: "manual",
+      });
+      assert.equal(res.status, 403);
+    });
+
+    it("POST /admin/logout destroys session", async () => {
+      const cookie = await adminLogin();
+
+      // Logout
+      const logoutRes = await fetch(`${BASE}/admin/logout`, {
+        method: "POST",
+        headers: { Cookie: cookie },
+        redirect: "manual",
+      });
+      assert.equal(logoutRes.status, 302);
+      assert.ok(logoutRes.headers.get("location").includes("/admin/login"));
+
+      // Session should be invalid now
+      const res = await fetch(`${BASE}/admin/documents`, {
+        headers: { Cookie: cookie },
+        redirect: "manual",
+      });
+      assert.equal(res.status, 302);
+      assert.ok(res.headers.get("location").includes("/admin/login"));
+    });
+
+    it("serves admin.css static file", async () => {
+      const res = await fetch(`${BASE}/admin/admin.css`);
+      assert.equal(res.status, 200);
+      const css = await res.text();
+      assert.ok(css.includes(".admin-nav"));
     });
   });
 });
