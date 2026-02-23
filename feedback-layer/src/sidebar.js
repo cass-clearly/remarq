@@ -149,12 +149,27 @@ export function showCommentForm(quote) {
       <div class="fb-form-actions">
         <button class="fb-btn fb-btn-primary fb-submit-btn">Add Comment</button>
         <button class="fb-btn fb-btn-cancel fb-cancel-btn">Cancel</button>
+        <button class="fb-visibility-toggle" title="Toggle private/public" data-visibility="public">
+          <svg class="fb-visibility-icon-public" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+          <svg class="fb-visibility-icon-private" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </button>
       </div>
     </div>
   `;
 
   const textarea = _formEl.querySelector(".fb-form-textarea");
   textarea.focus();
+
+  // Visibility toggle
+  const visToggle = _formEl.querySelector(".fb-visibility-toggle");
+  visToggle.addEventListener("click", (e) => {
+    e.preventDefault();
+    const current = visToggle.dataset.visibility;
+    const next = current === "public" ? "private" : "public";
+    visToggle.dataset.visibility = next;
+    visToggle.classList.toggle("fb-visibility-private", next === "private");
+    visToggle.title = next === "private" ? "Private (only you)" : "Public (everyone)";
+  });
 
   const submitComment = () => {
     if (!getCommenter()) {
@@ -166,7 +181,8 @@ export function showCommentForm(quote) {
     }
     const comment = textarea.value.trim();
     if (!comment) return;
-    _onSubmit({ comment, commenter: getCommenter() });
+    const visibility = visToggle.dataset.visibility;
+    _onSubmit({ comment, commenter: getCommenter(), visibility });
     _formEl.style.display = "none";
     _pendingQuote = null;
   };
@@ -280,15 +296,22 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
 
 function buildCard(ann, isReply) {
   const isClosed = ann.status === 'closed';
+  const isPrivate = ann.visibility === 'private';
   const card = document.createElement("div");
   card.className = "fb-cmt-card"
     + (isClosed ? " fb-cmt-closed" : "")
-    + (isReply ? " fb-cmt-reply" : "");
+    + (isReply ? " fb-cmt-reply" : "")
+    + (isPrivate ? " fb-cmt-private" : "");
   card.dataset.id = ann.id;
+
+  const privateBadgeHtml = isPrivate
+    ? '<span class="fb-cmt-private-badge" title="Private annotation">&#x1F512;</span>'
+    : '';
 
   card.innerHTML = `
     <div class="fb-cmt-body">${escapeHtml(ann.body)}</div>
     <div class="fb-cmt-meta">
+      ${privateBadgeHtml}
       <span class="fb-cmt-author">${escapeHtml(ann.author)}</span>
       <span class="fb-cmt-time">${timeAgo(ann.created_at)}</span>
       <button class="fb-cmt-edit" title="Edit">&#x270E;</button>
@@ -754,6 +777,49 @@ function injectStyles() {
       color: #555;
     }
     .fb-btn-cancel:hover { background: #e5e7eb; }
+
+    /* ── Visibility toggle ── */
+    .fb-visibility-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 5px 8px;
+      cursor: pointer;
+      color: #999;
+      margin-left: auto;
+      line-height: 1;
+    }
+    .fb-visibility-toggle:hover {
+      border-color: #7c3aed;
+      color: #7c3aed;
+    }
+    .fb-visibility-toggle.fb-visibility-private {
+      border-color: #7c3aed;
+      background: rgba(124,58,237,0.08);
+      color: #7c3aed;
+    }
+    .fb-visibility-toggle.fb-visibility-private .fb-visibility-icon-public { display: none; }
+    .fb-visibility-toggle.fb-visibility-private .fb-visibility-icon-private { display: inline !important; }
+
+    /* ── Private comment card styling ── */
+    .fb-cmt-private {
+      border-style: dashed;
+      background: #f9fafb;
+    }
+    .fb-cmt-private-badge {
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    /* ── Private highlight styling ── */
+    .fb-highlight-private {
+      border: 2px dashed #7c3aed;
+      border-radius: 3px;
+      opacity: 0.7;
+    }
 
     /* Annotate tooltip (appears on text selection) */
     .fb-annotate-tooltip {
