@@ -335,15 +335,15 @@ function buildCard(ann, isReply) {
   return card;
 }
 
-const REACTION_ICONS = {
-  "👍": { label: "Like", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22V11l-5 0v11h5zm2-11l3.5-7a2 2 0 0 1 2-1.5c.8 0 1.5.7 1.5 1.5v5h4.5a2 2 0 0 1 2 2.2l-1.3 7a2 2 0 0 1-2 1.8H9z"/></svg>' },
-  "❤️": { label: "Love", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.3l7.8-7.8 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>' },
-  "👀": { label: "Seen", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' },
-  "🎉": { label: "Celebrate", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' },
-  "🤔": { label: "Question", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/></svg>' },
-  "😂": { label: "Funny", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>' },
+const REACTION_EMOJI = {
+  "👍": "Like",
+  "❤️": "Love",
+  "👀": "Seen",
+  "🎉": "Celebrate",
+  "🤔": "Question",
+  "😂": "Funny",
 };
-const EMOJI_SET = Object.keys(REACTION_ICONS);
+const EMOJI_SET = Object.keys(REACTION_EMOJI);
 
 function buildReactionBar(container, ann) {
   const reactions = ann.reactions || [];
@@ -357,9 +357,9 @@ function buildReactionBar(container, ann) {
     if (isMine) {
       badge.classList.add("fb-reaction-mine");
     }
-    const icon = REACTION_ICONS[r.emoji];
-    badge.innerHTML = `${icon ? icon.svg : r.emoji}<span class="fb-reaction-count">${r.count}</span>`;
-    badge.title = (icon ? icon.label + ": " : "") + r.authors.join(", ");
+    const label = REACTION_EMOJI[r.emoji];
+    badge.innerHTML = `${r.emoji}<span class="fb-reaction-count">${r.count}</span>`;
+    badge.title = (label ? label + ": " : "") + r.authors.join(", ");
     badge.addEventListener("click", (e) => {
       e.stopPropagation();
       if (_onReaction) _onReaction(ann.id, r.emoji);
@@ -388,11 +388,11 @@ function showEmojiPicker(container, ann, addBtn) {
   picker.className = "fb-emoji-picker";
 
   for (const emoji of EMOJI_SET) {
-    const icon = REACTION_ICONS[emoji];
+    const label = REACTION_EMOJI[emoji];
     const btn = document.createElement("button");
     btn.className = "fb-emoji-option";
-    btn.innerHTML = icon.svg;
-    btn.title = icon.label;
+    btn.textContent = emoji;
+    btn.title = label;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       picker.remove();
