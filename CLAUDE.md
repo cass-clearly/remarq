@@ -21,7 +21,11 @@ git push -u origin feature/<short-description>
 ```
 gh pr create --title "<concise title>" --body "<what changed and why>"
 ```
-PR description must explain: what was changed, why it was needed, and how to verify it.
+PR description must use the template in `.github/pull_request_template.md`. Fill in all sections.
+
+**When adding or changing API endpoints:**
+- Include an endpoint table in the PR description (in the "New/Changed Endpoints" section)
+- Update the README API reference (`README.md` → API Reference section) with the new endpoints, matching the existing table format
 
 ### 4. Spawn a Review Agent
 After opening the PR, spawn a fresh **general-purpose** agent with this prompt:
@@ -44,10 +48,6 @@ If the review agent requests changes, fix them on the same branch, push, and re-
 ```
 gh pr merge --squash --delete-branch
 ```
-
-## Documentation
-
-All functional changes (new features, changed behavior, new keyboard shortcuts, configuration options) must be documented in README.md before the PR is opened.
 
 ## Testing & Coverage
 
