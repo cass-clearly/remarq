@@ -372,7 +372,7 @@ function buildReactionBar(container, ann) {
   // Smiley button to open picker
   const addBtn = document.createElement("button");
   addBtn.className = "fb-reaction-add";
-  addBtn.textContent = "😀";
+  addBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 14c1 2 7 2 8 0"/></svg>';
   addBtn.title = "Add reaction";
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
