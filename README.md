@@ -171,9 +171,22 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 - **Text anchoring** — annotations are anchored to specific text passages using TextQuoteSelectors (via Apache Annotator), so highlights survive minor edits
 - **Threaded replies** — discuss any annotation
 - **Resolve/unresolve** — mark feedback as addressed
-- **Keyboard shortcuts** — Cmd+Enter to submit
+- **Keyboard shortcuts** — navigate and manage feedback without touching the mouse
 - **One script tag** — drop-in integration for any HTML page
 - **Agent-ready API** — structured feedback your AI can consume and act on
+
+## Keyboard Shortcuts
+
+When the sidebar is open:
+
+| Key | Action |
+|-----|--------|
+| `J` | Next comment thread |
+| `K` | Previous comment thread |
+| `Enter` | Reply to selected thread |
+| `Escape` | Close sidebar (or dismiss help) |
+| `?` | Toggle keyboard shortcuts help |
+| `Cmd/Ctrl+Enter` | Submit comment or reply |
 
 ## The Bottom Line
 

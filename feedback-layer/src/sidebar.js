@@ -64,6 +64,9 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
         <button class="fb-ai-btn" title="Send feedback to Claude">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
         </button>
+        <button class="fb-hotkey-help-btn" title="Keyboard shortcuts (?)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"/></svg>
+        </button>
         <button class="fb-sidebar-toggle" title="Close sidebar">&times;</button>
       </div>
     </div>
@@ -119,6 +122,132 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+
+  // Hotkey help button
+  const helpBtn = _sidebar.querySelector(".fb-hotkey-help-btn");
+  helpBtn.addEventListener("click", () => toggleHelpOverlay());
+
+  // Create help overlay
+  _helpOverlay = document.createElement("div");
+  _helpOverlay.className = "fb-help-overlay";
+  _helpOverlay.style.display = "none";
+  _helpOverlay.innerHTML = `
+    <div class="fb-help-modal">
+      <div class="fb-help-header">
+        <strong>Keyboard Shortcuts</strong>
+        <button class="fb-help-close">&times;</button>
+      </div>
+      <table class="fb-help-table">
+        <tr><td><kbd>J</kbd></td><td>Next comment thread</td></tr>
+        <tr><td><kbd>K</kbd></td><td>Previous comment thread</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Reply to selected thread</td></tr>
+        <tr><td><kbd>Escape</kbd></td><td>Close sidebar</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
+      </table>
+    </div>
+  `;
+  _sidebar.appendChild(_helpOverlay);
+  _helpOverlay.querySelector(".fb-help-close").addEventListener("click", () => {
+    _helpOverlay.style.display = "none";
+  });
+
+  // Global keyboard shortcuts
+  document.addEventListener("keydown", _handleKeyDown);
+}
+
+let _helpOverlay = null;
+let _activeThreadIndex = -1;
+
+function _isInputFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
+}
+
+function _isSidebarOpen() {
+  return _sidebar && !_sidebar.classList.contains("fb-sidebar-collapsed");
+}
+
+function toggleHelpOverlay() {
+  if (!_helpOverlay) return;
+  _helpOverlay.style.display = _helpOverlay.style.display === "none" ? "flex" : "none";
+}
+
+function _getVisibleThreadCards() {
+  if (!_listEl) return [];
+  return Array.from(_listEl.querySelectorAll(".fb-thread > .fb-cmt-card:first-child"));
+}
+
+function _navigateThread(direction) {
+  const cards = _getVisibleThreadCards();
+  if (cards.length === 0) return;
+
+  if (_activeThreadIndex < 0) {
+    _activeThreadIndex = direction === 1 ? 0 : cards.length - 1;
+  } else {
+    _activeThreadIndex += direction;
+    if (_activeThreadIndex >= cards.length) _activeThreadIndex = 0;
+    if (_activeThreadIndex < 0) _activeThreadIndex = cards.length - 1;
+  }
+
+  const card = cards[_activeThreadIndex];
+  const commentId = card.dataset.id;
+
+  // Highlight in sidebar
+  _listEl.querySelectorAll(".fb-cmt-card").forEach(c => c.classList.remove("fb-cmt-active"));
+  card.classList.add("fb-cmt-active");
+  card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Highlight in document
+  if (commentId) {
+    setActiveHighlight(commentId);
+    scrollToHighlight(commentId);
+  }
+}
+
+function _handleKeyDown(e) {
+  // ESC always closes sidebar (even if input focused)
+  if (e.key === "Escape" && _isSidebarOpen()) {
+    // Close help overlay first if open
+    if (_helpOverlay && _helpOverlay.style.display !== "none") {
+      _helpOverlay.style.display = "none";
+      return;
+    }
+    closeSidebar();
+    return;
+  }
+
+  // Other shortcuts only when no input is focused
+  if (_isInputFocused()) return;
+  if (!_isSidebarOpen()) return;
+
+  switch (e.key) {
+    case "j":
+      e.preventDefault();
+      _navigateThread(1);
+      break;
+    case "k":
+      e.preventDefault();
+      _navigateThread(-1);
+      break;
+    case "?":
+      e.preventDefault();
+      toggleHelpOverlay();
+      break;
+    case "Enter": {
+      const cards = _getVisibleThreadCards();
+      if (_activeThreadIndex >= 0 && _activeThreadIndex < cards.length) {
+        const card = cards[_activeThreadIndex];
+        const replyBtn = card.closest(".fb-thread")?.querySelector(".fb-reply-btn");
+        if (replyBtn) {
+          e.preventDefault();
+          replyBtn.click();
+        }
+      }
+      break;
+    }
+  }
 }
 
 export function openSidebar() {
@@ -129,6 +258,7 @@ export function openSidebar() {
 function closeSidebar() {
   _sidebar.classList.add("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.remove("fb-sidebar-tab-hidden");
+  _activeThreadIndex = -1;
 }
 
 /**
@@ -521,6 +651,22 @@ export function focusCommentCard(commentId) {
 function injectStyles() {
   const style = document.createElement("style");
   style.textContent = `
+    :root {
+      --fb-reaction-border: #dadce0;
+      --fb-reaction-bg: #f1f3f4;
+      --fb-reaction-text: #5f6368;
+      --fb-reaction-hover-border: #bdc1c6;
+      --fb-reaction-hover-bg: #e8eaed;
+      --fb-reaction-mine-border: #1a73e8;
+      --fb-reaction-mine-bg: #e8f0fe;
+      --fb-reaction-mine-text: #1a73e8;
+      --fb-reaction-mine-hover-bg: #d2e3fc;
+      --fb-picker-bg: #fff;
+      --fb-picker-border: #e0e0e0;
+      --fb-picker-shadow: rgba(0,0,0,0.08);
+      --fb-emoji-hover-bg: #e8eaed;
+      --fb-emoji-hover-text: #202124;
+    }
     .fb-sidebar {
       position: fixed;
       top: 0;
@@ -595,6 +741,69 @@ function injectStyles() {
     }
     .fb-ai-btn:hover {
       background: #f3f0ff;
+    }
+    .fb-hotkey-help-btn {
+      background: none;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 4px 6px;
+      cursor: pointer;
+      color: #666;
+      display: flex;
+      align-items: center;
+    }
+    .fb-hotkey-help-btn:hover {
+      background: #f3f0ff;
+    }
+    .fb-help-overlay {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-help-modal {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+      max-width: 280px;
+      width: 90%;
+    }
+    .fb-help-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .fb-help-close {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666;
+    }
+    .fb-help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .fb-help-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .fb-help-table td:first-child {
+      width: 80px;
+    }
+    .fb-help-table kbd {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 12px;
     }
     .fb-sidebar-toggle {
       background: none;
@@ -744,39 +953,39 @@ function injectStyles() {
       gap: 4px;
       padding: 2px 8px;
       border-radius: 12px;
-      border: 1px solid #dadce0;
-      background: #f1f3f4;
+      border: 1px solid var(--fb-reaction-border);
+      background: var(--fb-reaction-bg);
       font-size: 11px;
-      color: #5f6368;
+      color: var(--fb-reaction-text);
       cursor: pointer;
       line-height: 1.4;
       font-family: inherit;
     }
     .fb-reaction-badge svg {
-      color: #5f6368;
+      color: var(--fb-reaction-text);
       flex-shrink: 0;
     }
     .fb-reaction-count {
       font-size: 11px;
-      color: #5f6368;
+      color: var(--fb-reaction-text);
     }
     .fb-reaction-badge:hover {
-      border-color: #bdc1c6;
-      background: #e8eaed;
+      border-color: var(--fb-reaction-hover-border);
+      background: var(--fb-reaction-hover-bg);
     }
     .fb-reaction-mine {
-      border-color: #1a73e8;
-      background: #e8f0fe;
+      border-color: var(--fb-reaction-mine-border);
+      background: var(--fb-reaction-mine-bg);
     }
     .fb-reaction-mine svg {
-      color: #1a73e8;
+      color: var(--fb-reaction-mine-text);
     }
     .fb-reaction-mine .fb-reaction-count {
-      color: #1a73e8;
+      color: var(--fb-reaction-mine-text);
     }
     .fb-reaction-mine:hover {
-      background: #d2e3fc;
-      border-color: #1a73e8;
+      background: var(--fb-reaction-mine-hover-bg);
+      border-color: var(--fb-reaction-mine-border);
     }
     .fb-reaction-add {
       display: inline-flex;
@@ -785,25 +994,25 @@ function injectStyles() {
       width: 28px;
       height: 24px;
       border-radius: 12px;
-      border: 1px solid #dadce0;
-      background: #f1f3f4;
-      color: #5f6368;
+      border: 1px solid var(--fb-reaction-border);
+      background: var(--fb-reaction-bg);
+      color: var(--fb-reaction-text);
       cursor: pointer;
       line-height: 1;
       font-family: inherit;
     }
     .fb-reaction-add:hover {
-      border-color: #bdc1c6;
-      background: #e8eaed;
+      border-color: var(--fb-reaction-hover-border);
+      background: var(--fb-reaction-hover-bg);
     }
     .fb-emoji-picker {
       display: flex;
       gap: 2px;
       padding: 4px;
-      background: #fff;
-      border: 1px solid #e0e0e0;
+      background: var(--fb-picker-bg);
+      border: 1px solid var(--fb-picker-border);
       border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 8px var(--fb-picker-shadow);
     }
     .fb-emoji-option {
       background: none;
@@ -812,14 +1021,14 @@ function injectStyles() {
       padding: 6px;
       border-radius: 4px;
       line-height: 1;
-      color: #5f6368;
+      color: var(--fb-reaction-text);
       display: inline-flex;
       align-items: center;
       justify-content: center;
     }
     .fb-emoji-option:hover {
-      background: #e8eaed;
-      color: #202124;
+      background: var(--fb-emoji-hover-bg);
+      color: var(--fb-emoji-hover-text);
     }
     .fb-filter-section {
       margin-bottom: 12px;
@@ -1037,6 +1246,24 @@ function injectStyles() {
     }
     .fb-toast-dismiss:hover {
       color: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fb-reaction-border: #5f6368;
+        --fb-reaction-bg: #3c4043;
+        --fb-reaction-text: #bdc1c6;
+        --fb-reaction-hover-border: #8ab4f8;
+        --fb-reaction-hover-bg: #4a4e51;
+        --fb-reaction-mine-border: #8ab4f8;
+        --fb-reaction-mine-bg: #1e3a5f;
+        --fb-reaction-mine-text: #8ab4f8;
+        --fb-reaction-mine-hover-bg: #2b4f7e;
+        --fb-picker-bg: #2d2e30;
+        --fb-picker-border: #5f6368;
+        --fb-picker-shadow: rgba(0,0,0,0.3);
+        --fb-emoji-hover-bg: #4a4e51;
+        --fb-emoji-hover-text: #e8eaed;
+      }
     }
   `;
   document.head.appendChild(style);
