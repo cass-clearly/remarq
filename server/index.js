@@ -5,6 +5,8 @@ const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { triggerEvent } = require("./webhooks.js");
+const { registerWebhookRoutes } = require("./webhook-routes.js");
 const path = require("path");
 
 const app = express();
@@ -45,6 +47,17 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id         TEXT PRIMARY KEY,
+      url        TEXT NOT NULL,
+      secret     TEXT NOT NULL,
+      events     TEXT[] NOT NULL DEFAULT '{}',
+      active     BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -237,7 +250,9 @@ app.post("/comments", asyncHandler(async (req, res) => {
     return rows[0];
   });
 
-  res.status(201).json(formatComment(comment));
+  const formatted = formatComment(comment);
+  triggerEvent(pool, "comment.created", { comment: formatted });
+  res.status(201).json(formatted);
 }));
 
 app.get("/comments/:id", asyncHandler(async (req, res) => {
@@ -273,15 +288,25 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   }
 
   const updated = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
-  res.json(formatComment(updated.rows[0]));
+  const formatted = formatComment(updated.rows[0]);
+  if (status === "closed") {
+    triggerEvent(pool, "comment.resolved", { comment: formatted });
+  }
+  res.json(formatted);
 }));
 
 app.delete("/comments/:id", asyncHandler(async (req, res) => {
   await pool.query("DELETE FROM comments WHERE parent = $1", [req.params.id]);
   const { rows } = await pool.query("DELETE FROM comments WHERE id = $1 RETURNING *", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
-  res.json(formatComment(rows[0]));
+  const formatted = formatComment(rows[0]);
+  triggerEvent(pool, "comment.deleted", { comment: formatted });
+  res.json(formatted);
 }));
+
+// ── Webhook endpoints ───────────────────────────────────────────────
+
+registerWebhookRoutes(app, pool, asyncHandler);
 
 // ── Static files ────────────────────────────────────────────────────
 

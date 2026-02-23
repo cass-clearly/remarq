@@ -14,7 +14,9 @@
     "index.js",
     "generate-id.js",
     "normalize-uri.js",
-    "sanitize.js"
+    "sanitize.js",
+    "webhooks.js",
+    "webhook-routes.js"
   ],
   "dependencies": {
     "cors": "^2.8.5",

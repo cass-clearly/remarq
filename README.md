@@ -147,6 +147,18 @@ Stripe-inspired resource pattern. All responses include an `object` field. **Ful
 | `PATCH` | `/comments/:id` | Update body or status (root comments only) |
 | `DELETE` | `/comments/:id` | Delete a comment and its replies |
 
+### Webhooks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/webhooks` | List all webhooks |
+| `POST` | `/webhooks` | Register a webhook (requires `url`, `secret`, `events[]`) |
+| `GET` | `/webhooks/:id` | Retrieve a webhook |
+| `PATCH` | `/webhooks/:id` | Update a webhook (`url`, `events`, `active`) |
+| `DELETE` | `/webhooks/:id` | Delete a webhook |
+
+Events: `comment.created`, `comment.resolved`, `comment.deleted`. Payloads are signed with HMAC-SHA256 using the webhook's secret. Slack and Discord URLs are auto-detected for platform-specific formatting.
+
 Status is a thread-level concept — only root comments have status (`"open"` or `"closed"`). Replies always have `status: null`. The `?status=` filter matches root comments and includes all their replies. Query params can be combined (e.g. `?document=<id>&status=open&expand=document`).
 
 ### POST /comments body

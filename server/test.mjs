@@ -1,5 +1,6 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 
 // ── Utility unit tests ──────────────────────────────────────────────
 
@@ -102,6 +103,131 @@ describe("sanitize", async () => {
   });
 });
 
+describe("webhooks", async () => {
+  const {
+    signPayload, deliverWebhook, retryWithBackoff,
+    formatSlackPayload, formatDiscordPayload,
+  } = await import("./webhooks.js");
+
+  it("signPayload produces valid HMAC-SHA256 hex", () => {
+    const sig = signPayload("mysecret", '{"event":"test"}');
+    assert.match(sig, /^[0-9a-f]{64}$/);
+  });
+
+  it("signPayload is deterministic", () => {
+    const a = signPayload("key", "body");
+    const b = signPayload("key", "body");
+    assert.equal(a, b);
+  });
+
+  it("signPayload differs with different secrets", () => {
+    const a = signPayload("key1", "body");
+    const b = signPayload("key2", "body");
+    assert.notEqual(a, b);
+  });
+
+  it("retryWithBackoff succeeds on first try", async () => {
+    let calls = 0;
+    const result = await retryWithBackoff(() => { calls++; return "ok"; }, { baseDelay: 1 });
+    assert.equal(result, "ok");
+    assert.equal(calls, 1);
+  });
+
+  it("retryWithBackoff retries on failure", async () => {
+    let calls = 0;
+    const result = await retryWithBackoff(() => {
+      calls++;
+      if (calls < 3) throw new Error("fail");
+      return "ok";
+    }, { maxAttempts: 3, baseDelay: 1 });
+    assert.equal(result, "ok");
+    assert.equal(calls, 3);
+  });
+
+  it("retryWithBackoff throws after max attempts", async () => {
+    await assert.rejects(
+      () => retryWithBackoff(() => { throw new Error("always fails"); }, { maxAttempts: 2, baseDelay: 1 }),
+      { message: "always fails" }
+    );
+  });
+
+  it("deliverWebhook sends POST with signature header", async () => {
+    let receivedHeaders, receivedBody;
+    const receiver = createServer((req, res) => {
+      receivedHeaders = req.headers;
+      let data = "";
+      req.on("data", (chunk) => { data += chunk; });
+      req.on("end", () => { receivedBody = data; res.writeHead(200).end(); });
+    });
+
+    await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    const port = receiver.address().port;
+
+    try {
+      const payload = { event: "comment.created", data: { test: true } };
+      await deliverWebhook(`http://127.0.0.1:${port}`, "secret123", payload);
+
+      assert.equal(receivedHeaders["content-type"], "application/json");
+      assert.ok(receivedHeaders["x-remarq-signature"]);
+      assert.equal(receivedHeaders["x-remarq-signature"], signPayload("secret123", JSON.stringify(payload)));
+      assert.deepEqual(JSON.parse(receivedBody), payload);
+    } finally {
+      receiver.close();
+    }
+  });
+
+  it("deliverWebhook throws on non-2xx response", async () => {
+    const receiver = createServer((_req, res) => {
+      res.writeHead(500).end();
+    });
+    await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    const port = receiver.address().port;
+
+    try {
+      await assert.rejects(
+        () => deliverWebhook(`http://127.0.0.1:${port}`, "secret", { test: true }),
+        { message: "Webhook delivery failed: 500" }
+      );
+    } finally {
+      receiver.close();
+    }
+  });
+
+  it("formatSlackPayload formats comment.created", () => {
+    const result = formatSlackPayload("comment.created", {
+      comment: { author: "Alice", body: "Hello world", document: "doc_1" },
+    });
+    assert.equal(result.text, "New comment by Alice");
+    assert.ok(result.blocks[0].text.text.includes("Alice"));
+    assert.ok(result.blocks[0].text.text.includes("Hello world"));
+  });
+
+  it("formatSlackPayload formats comment.resolved", () => {
+    const result = formatSlackPayload("comment.resolved", {
+      comment: { author: "Bob", body: "Done", document: "doc_1" },
+    });
+    assert.equal(result.text, "Comment resolved by Bob");
+  });
+
+  it("formatSlackPayload formats comment.deleted", () => {
+    const result = formatSlackPayload("comment.deleted", {
+      comment: { author: "Charlie", body: "Bye", document: "doc_1" },
+    });
+    assert.equal(result.text, "Comment deleted by Charlie");
+  });
+
+  it("formatDiscordPayload includes embeds with fields", () => {
+    const result = formatDiscordPayload("comment.created", {
+      comment: { author: "Alice", body: "Hello world", document: "doc_1" },
+    });
+    assert.equal(result.embeds.length, 1);
+    assert.equal(result.embeds[0].title, "New comment");
+    assert.equal(result.embeds[0].description, "Hello world");
+    assert.equal(result.embeds[0].fields[0].value, "Alice");
+    assert.equal(result.embeds[0].fields[1].value, "doc_1");
+  });
+});
+
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
@@ -128,6 +254,7 @@ describe("API", async () => {
   beforeEach(async () => {
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
+    await pool.query("DELETE FROM webhooks");
   });
 
   // ── Health check ─────────────────────────────────────────────
@@ -893,6 +1020,447 @@ describe("API", async () => {
     it("returns 404 for missing comment", async () => {
       const res = await fetch(`${BASE}/comments/cmt_nonexistent`, { method: "DELETE" });
       assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Webhooks CRUD ─────────────────────────────────────────────
+
+  describe("POST /webhooks", () => {
+    it("creates a webhook", async () => {
+      const res = await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: "https://example.com/hook",
+          secret: "s3cret",
+          events: ["comment.created"],
+        }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 201);
+      assert.match(json.id, /^whk_/);
+      assert.equal(json.object, "webhook");
+      assert.equal(json.url, "https://example.com/hook");
+      assert.deepEqual(json.events, ["comment.created"]);
+      assert.equal(json.active, true);
+    });
+
+    it("returns 400 when url is missing", async () => {
+      const res = await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: "s", events: ["comment.created"] }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 400 when secret is missing", async () => {
+      const res = await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", events: ["comment.created"] }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 400 when events is empty", async () => {
+      const res = await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: [] }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 400 for invalid event types", async () => {
+      const res = await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["invalid.event"] }),
+      });
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.message.includes("invalid.event"));
+    });
+  });
+
+  describe("GET /webhooks", () => {
+    it("returns empty list", async () => {
+      const res = await fetch(`${BASE}/webhooks`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.deepEqual(json, { object: "list", data: [] });
+    });
+
+    it("lists created webhooks", async () => {
+      await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      });
+
+      const res = await fetch(`${BASE}/webhooks`);
+      const json = await res.json();
+      assert.equal(json.data.length, 1);
+      assert.equal(json.data[0].url, "https://example.com/hook");
+    });
+  });
+
+  describe("GET /webhooks/:id", () => {
+    it("retrieves a webhook", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`);
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.id, create.id);
+    });
+
+    it("returns 404 for missing webhook", async () => {
+      const res = await fetch(`${BASE}/webhooks/whk_nonexistent`);
+      assert.equal(res.status, 404);
+    });
+  });
+
+  describe("PATCH /webhooks/:id", () => {
+    it("updates url", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/new-hook" }),
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.url, "https://example.com/new-hook");
+    });
+
+    it("updates events", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: ["comment.created", "comment.resolved"] }),
+      });
+      const json = await res.json();
+      assert.deepEqual(json.events, ["comment.created", "comment.resolved"]);
+    });
+
+    it("deactivates webhook", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      const json = await res.json();
+      assert.equal(json.active, false);
+    });
+
+    it("returns 400 for invalid events", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: ["bad.event"] }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("returns 404 for missing webhook", async () => {
+      const res = await fetch(`${BASE}/webhooks/whk_nonexistent`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/new" }),
+      });
+      assert.equal(res.status, 404);
+    });
+  });
+
+  describe("DELETE /webhooks/:id", () => {
+    it("deletes a webhook", async () => {
+      const create = await (await fetch(`${BASE}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/hook", secret: "s", events: ["comment.created"] }),
+      })).json();
+
+      const res = await fetch(`${BASE}/webhooks/${create.id}`, { method: "DELETE" });
+      const json = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(json.id, create.id);
+
+      const after = await fetch(`${BASE}/webhooks`);
+      const afterJson = await after.json();
+      assert.equal(afterJson.data.length, 0);
+    });
+
+    it("returns 404 for missing webhook", async () => {
+      const res = await fetch(`${BASE}/webhooks/whk_nonexistent`, { method: "DELETE" });
+      assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Webhook event triggers ────────────────────────────────────
+
+  describe("Webhook event delivery", () => {
+    it("delivers comment.created event to registered webhook", async () => {
+      let receivedPayload;
+      const receiver = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => { data += chunk; });
+        req.on("end", () => { receivedPayload = JSON.parse(data); res.writeHead(200).end(); });
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "test-secret",
+            events: ["comment.created"],
+          }),
+        });
+
+        await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-test", quote: "q", body: "hello", author: "tester" }),
+        });
+
+        // Wait for async delivery
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        assert.ok(receivedPayload, "Webhook should have been called");
+        assert.equal(receivedPayload.event, "comment.created");
+        assert.equal(receivedPayload.data.comment.body, "hello");
+        assert.equal(receivedPayload.data.comment.author, "tester");
+      } finally {
+        receiver.close();
+      }
+    });
+
+    it("delivers comment.resolved event when status set to closed", async () => {
+      let receivedPayload;
+      const receiver = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => { data += chunk; });
+        req.on("end", () => { receivedPayload = JSON.parse(data); res.writeHead(200).end(); });
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "test-secret",
+            events: ["comment.resolved"],
+          }),
+        });
+
+        const cmt = await (await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-resolve", quote: "q", body: "b", author: "a" }),
+        })).json();
+
+        await fetch(`${BASE}/comments/${cmt.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "closed" }),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        assert.ok(receivedPayload, "Webhook should have been called");
+        assert.equal(receivedPayload.event, "comment.resolved");
+        assert.equal(receivedPayload.data.comment.status, "closed");
+      } finally {
+        receiver.close();
+      }
+    });
+
+    it("delivers comment.deleted event", async () => {
+      let receivedPayload;
+      const receiver = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => { data += chunk; });
+        req.on("end", () => { receivedPayload = JSON.parse(data); res.writeHead(200).end(); });
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "test-secret",
+            events: ["comment.deleted"],
+          }),
+        });
+
+        const cmt = await (await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-delete", quote: "q", body: "b", author: "a" }),
+        })).json();
+
+        await fetch(`${BASE}/comments/${cmt.id}`, { method: "DELETE" });
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        assert.ok(receivedPayload, "Webhook should have been called");
+        assert.equal(receivedPayload.event, "comment.deleted");
+        assert.equal(receivedPayload.data.comment.id, cmt.id);
+      } finally {
+        receiver.close();
+      }
+    });
+
+    it("does not deliver to inactive webhooks", async () => {
+      let called = false;
+      const receiver = createServer((_req, res) => {
+        called = true;
+        res.writeHead(200).end();
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        const wh = await (await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "test-secret",
+            events: ["comment.created"],
+          }),
+        })).json();
+
+        // Deactivate
+        await fetch(`${BASE}/webhooks/${wh.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active: false }),
+        });
+
+        await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-inactive", quote: "q", body: "b", author: "a" }),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        assert.equal(called, false, "Inactive webhook should not be called");
+      } finally {
+        receiver.close();
+      }
+    });
+
+    it("does not deliver for non-subscribed events", async () => {
+      let called = false;
+      const receiver = createServer((_req, res) => {
+        called = true;
+        res.writeHead(200).end();
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "test-secret",
+            events: ["comment.resolved"],  // Only subscribed to resolved
+          }),
+        });
+
+        // Create a comment (should NOT trigger since only subscribed to resolved)
+        await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-no-match", quote: "q", body: "b", author: "a" }),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        assert.equal(called, false, "Webhook should not fire for non-subscribed events");
+      } finally {
+        receiver.close();
+      }
+    });
+
+    it("includes HMAC signature on delivered webhooks", async () => {
+      let receivedSignature, receivedBody;
+      const receiver = createServer((req, res) => {
+        receivedSignature = req.headers["x-remarq-signature"];
+        let data = "";
+        req.on("data", (chunk) => { data += chunk; });
+        req.on("end", () => { receivedBody = data; res.writeHead(200).end(); });
+      });
+      await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+      const port = receiver.address().port;
+
+      try {
+        const { signPayload } = await import("./webhooks.js");
+
+        await fetch(`${BASE}/webhooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: `http://127.0.0.1:${port}`,
+            secret: "verify-me",
+            events: ["comment.created"],
+          }),
+        });
+
+        await fetch(`${BASE}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/wh-sig", quote: "q", body: "b", author: "a" }),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        assert.ok(receivedSignature, "Should include signature header");
+        const expectedSig = signPayload("verify-me", receivedBody);
+        assert.equal(receivedSignature, expectedSig, "Signature should match HMAC-SHA256 of body");
+      } finally {
+        receiver.close();
+      }
     });
   });
 });
