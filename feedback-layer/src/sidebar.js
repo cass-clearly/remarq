@@ -357,10 +357,10 @@ function buildReactionBar(container, ann) {
     container.appendChild(badge);
   }
 
-  // "+" button to open picker
+  // Smiley button to open picker
   const addBtn = document.createElement("button");
   addBtn.className = "fb-reaction-add";
-  addBtn.textContent = "+";
+  addBtn.textContent = "😀";
   addBtn.title = "Add reaction";
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -751,20 +751,19 @@ function injectStyles() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 22px;
-      border-radius: 12px;
-      border: 1px dashed #e5e7eb;
-      background: none;
-      font-size: 14px;
+      width: 30px;
+      height: 28px;
+      border-radius: 14px;
+      border: 1px solid #d1d5db;
+      background: #f9fafb;
+      font-size: 16px;
       cursor: pointer;
-      color: #999;
       line-height: 1;
       font-family: inherit;
     }
     .fb-reaction-add:hover {
       border-color: #7c3aed;
-      color: #7c3aed;
+      background: rgba(124,58,237,0.1);
     }
     .fb-emoji-picker {
       display: flex;
