@@ -225,6 +225,49 @@ describe("timeAgo", async () => {
   });
 });
 
+// ── keyboard-nav ──────────────────────────────────────────────────────
+
+describe("getFocusableElements", async () => {
+  const { getFocusableElements } = await import("../src/utils/keyboard-nav.js");
+
+  it("returns empty array for null container", () => {
+    assert.deepEqual(getFocusableElements(null), []);
+  });
+});
+
+describe("wrapIndex", async () => {
+  const { wrapIndex } = await import("../src/utils/keyboard-nav.js");
+
+  it("wraps negative index to end", () => {
+    assert.equal(wrapIndex(-1, 5), 4);
+  });
+
+  it("wraps index past end to beginning", () => {
+    assert.equal(wrapIndex(5, 5), 0);
+  });
+
+  it("returns 0 for zero length", () => {
+    assert.equal(wrapIndex(3, 0), 0);
+  });
+
+  it("returns index unchanged when within bounds", () => {
+    assert.equal(wrapIndex(2, 5), 2);
+  });
+
+  it("wraps large negative index", () => {
+    assert.equal(wrapIndex(-7, 3), 2);
+  });
+
+  it("wraps large positive index", () => {
+    assert.equal(wrapIndex(10, 3), 1);
+  });
+
+  it("returns 0 for index 0 and length 1", () => {
+    assert.equal(wrapIndex(0, 1), 0);
+  });
+});
+
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {

@@ -12,6 +12,7 @@ import { threadComments } from "./utils/thread-comments.js";
 import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
+import { wrapIndex } from "./utils/keyboard-nav.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -29,7 +30,8 @@ let _onReaction = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
-let _lastMatchedIds = null;
+let _activeThreadIndex = -1;
+let _keydownHandler = null;
 let _stylesInjected = false;
 
 /**
@@ -69,12 +71,17 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
 
   _sidebar = document.createElement("div");
   _sidebar.className = "fb-sidebar fb-sidebar-collapsed";
+  _sidebar.setAttribute("role", "complementary");
+  _sidebar.setAttribute("aria-label", "Feedback sidebar");
   _sidebar.innerHTML = `
     <div class="fb-sidebar-header">
       <strong>Feedback</strong>
       <div class="fb-sidebar-header-actions">
         <button class="fb-ai-btn" title="Send feedback to Claude">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+        </button>
+        <button class="fb-shortcuts-btn" title="Keyboard shortcuts (?)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"/></svg>
         </button>
         <button class="fb-sidebar-toggle" title="Close sidebar">&times;</button>
       </div>
@@ -109,6 +116,7 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   initToastContainer(_sidebar);
 
   _listEl = _sidebar.querySelector(".fb-comment-list");
+  _listEl.setAttribute("role", "list");
   _formEl = _sidebar.querySelector(".fb-form-section");
 
   // Name input
@@ -121,6 +129,10 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
   const aiBtn = _sidebar.querySelector(".fb-ai-btn");
   aiBtn.addEventListener("click", () => openModal());
 
+  // Keyboard shortcuts button in header
+  const shortcutsBtn = _sidebar.querySelector(".fb-shortcuts-btn");
+  shortcutsBtn.addEventListener("click", () => _toggleShortcutsHelp());
+
   // Close button in header
   const toggleBtn = _sidebar.querySelector(".fb-sidebar-toggle");
   toggleBtn.addEventListener("click", () => closeSidebar());
@@ -131,16 +143,180 @@ export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, 
     _showResolved = resolvedCb.checked;
     renderComments(_lastComments, _lastAnchoredIds);  // Use stored anchoredIds
   });
+
+  // Global keyboard shortcut: "s" to toggle sidebar
+  document.addEventListener("keydown", _handleGlobalKeydown);
 }
 
 export function openSidebar() {
   _sidebar.classList.remove("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.add("fb-sidebar-tab-hidden");
+  _attachKeyboardHandler();
+  // Focus first thread card if available
+  const firstCard = _listEl?.querySelector(".fb-thread .fb-cmt-card");
+  if (firstCard) {
+    _setActiveThread(0);
+  }
 }
 
-function closeSidebar() {
+export function closeSidebar() {
   _sidebar.classList.add("fb-sidebar-collapsed");
   document.querySelector(".fb-sidebar-tab").classList.remove("fb-sidebar-tab-hidden");
+  _detachKeyboardHandler();
+  _activeThreadIndex = -1;
+  document.body.focus();
+}
+
+function _isInputFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || el.isContentEditable;
+}
+
+function _getThreadCards() {
+  if (!_listEl) return [];
+  return Array.from(_listEl.querySelectorAll(".fb-thread > .fb-cmt-card:first-child"));
+}
+
+function _setActiveThread(index) {
+  const cards = _getThreadCards();
+  if (cards.length === 0) return;
+  index = wrapIndex(index, cards.length);
+  _activeThreadIndex = index;
+
+  // Clear existing active
+  _listEl.querySelectorAll(".fb-cmt-card").forEach((c) => c.classList.remove("fb-cmt-active"));
+  const card = cards[index];
+  card.classList.add("fb-cmt-active");
+  card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Also activate the highlight in the document
+  const thread = card.closest(".fb-thread");
+  if (thread?.dataset.commentId) {
+    setActiveHighlight(thread.dataset.commentId);
+    scrollToHighlight(thread.dataset.commentId);
+  }
+}
+
+function _handleSidebarKeydown(e) {
+  // Skip when sidebar is closed
+  if (_sidebar.classList.contains("fb-sidebar-collapsed")) return;
+
+  const key = e.key;
+
+  // ESC always works, even when typing in an input
+  if (key === "Escape") {
+    e.preventDefault();
+    closeSidebar();
+    return;
+  }
+
+  // Skip other shortcuts when typing in an input
+  if (_isInputFocused()) return;
+
+  if (key === "Enter") {
+    const cards = _getThreadCards();
+    if (_activeThreadIndex >= 0 && _activeThreadIndex < cards.length) {
+      e.preventDefault();
+      const thread = cards[_activeThreadIndex].closest(".fb-thread");
+      const replyBtn = thread?.querySelector(".fb-reply-btn");
+      if (replyBtn) replyBtn.click();
+    }
+    return;
+  }
+
+  if (key === "j") {
+    e.preventDefault();
+    const cards = _getThreadCards();
+    if (cards.length === 0) return;
+    const next = _activeThreadIndex < 0 ? 0 : _activeThreadIndex + 1;
+    _setActiveThread(next);
+    return;
+  }
+
+  if (key === "k") {
+    e.preventDefault();
+    const cards = _getThreadCards();
+    if (cards.length === 0) return;
+    const prev = _activeThreadIndex < 0 ? cards.length - 1 : _activeThreadIndex - 1;
+    _setActiveThread(prev);
+    return;
+  }
+
+  if (key === "?") {
+    e.preventDefault();
+    _toggleShortcutsHelp();
+    return;
+  }
+}
+
+function _toggleShortcutsHelp() {
+  const existing = document.querySelector(".fb-shortcuts-overlay");
+  if (existing) { existing.remove(); return; }
+
+  const overlay = document.createElement("div");
+  overlay.className = "fb-shortcuts-overlay";
+
+  const modal = document.createElement("div");
+  modal.className = "fb-shortcuts-modal";
+  modal.innerHTML = `
+    <div class="fb-shortcuts-header">
+      <strong>Keyboard Shortcuts</strong>
+      <button class="fb-shortcuts-close">&times;</button>
+    </div>
+    <div class="fb-shortcuts-body">
+      <table class="fb-shortcuts-table">
+        <tbody>
+          <tr><td><kbd>s</kbd></td><td>Toggle sidebar open/closed</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close sidebar</td></tr>
+          <tr><td><kbd>j</kbd></td><td>Next comment thread</td></tr>
+          <tr><td><kbd>k</kbd></td><td>Previous comment thread</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Reply to focused thread</td></tr>
+          <tr><td><kbd>Cmd+Enter</kbd></td><td>Submit comment or reply</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const close = () => overlay.remove();
+  modal.querySelector(".fb-shortcuts-close").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  modal.querySelector(".fb-shortcuts-close").focus();
+}
+
+function _handleGlobalKeydown(e) {
+  if (_isInputFocused()) return;
+  if (e.key === "s") {
+    e.preventDefault();
+    _toggleSidebar();
+  }
+}
+
+function _toggleSidebar() {
+  if (_sidebar.classList.contains("fb-sidebar-collapsed")) {
+    openSidebar();
+  } else {
+    closeSidebar();
+  }
+}
+
+function _attachKeyboardHandler() {
+  _detachKeyboardHandler();
+  _keydownHandler = _handleSidebarKeydown;
+  document.addEventListener("keydown", _keydownHandler);
+}
+
+function _detachKeyboardHandler() {
+  if (_keydownHandler) {
+    document.removeEventListener("keydown", _keydownHandler);
+    _keydownHandler = null;
+  }
 }
 
 /**
@@ -213,7 +389,8 @@ export function showCommentForm(quote) {
  */
 export function renderComments(comments, anchoredIds = new Set(), commentRanges = new Map()) {
   _lastComments = comments;
-  _lastAnchoredIds = anchoredIds;  // Store for later use
+  _lastAnchoredIds = anchoredIds;
+  _activeThreadIndex = -1;
   _listEl.innerHTML = "";
 
   const { topLevel, repliesByParent } = threadComments(comments);
@@ -270,6 +447,9 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   for (const ann of visibleTopLevel) {
     const thread = document.createElement("div");
     thread.className = "fb-thread";
+    thread.setAttribute("role", "listitem");
+    thread.setAttribute("tabindex", "0");
+    thread.dataset.commentId = ann.id;
 
     thread.appendChild(buildCard(ann, false));
 
@@ -288,6 +468,15 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
       showReplyForm(ann.id, thread, replyBtn);
     });
     thread.appendChild(replyBtn);
+
+    // Sync document highlight when thread receives focus (e.g. via Tab)
+    thread.addEventListener("focus", () => {
+      const cards = _getThreadCards();
+      const idx = cards.indexOf(thread.querySelector(".fb-cmt-card"));
+      if (idx >= 0) {
+        _setActiveThread(idx);
+      }
+    });
 
     _listEl.appendChild(thread);
   }
@@ -751,6 +940,21 @@ function injectStyles() {
     .fb-ai-btn:hover {
       background: var(--remarq-bg-hover);
     }
+    .fb-shortcuts-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #7c3aed;
+      padding: 4px;
+      line-height: 1;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-shortcuts-btn:hover {
+      background: #f3f0ff;
+    }
     .fb-sidebar-toggle {
       background: none;
       border: none;
@@ -1207,6 +1411,75 @@ function injectStyles() {
     }
     .fb-toast-dismiss:hover {
       color: #fff;
+    }
+
+    /* Keyboard shortcuts modal */
+    .fb-shortcuts-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10002;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fb-shortcuts-modal {
+      background: white;
+      border-radius: 12px;
+      width: 340px;
+      max-width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      color: #333;
+    }
+    .fb-shortcuts-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .fb-shortcuts-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #666;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .fb-shortcuts-body {
+      padding: 12px 16px 16px;
+    }
+    .fb-shortcuts-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .fb-shortcuts-table td {
+      padding: 6px 0;
+      vertical-align: middle;
+    }
+    .fb-shortcuts-table td:first-child {
+      width: 45%;
+      white-space: nowrap;
+    }
+    .fb-shortcuts-table kbd {
+      display: inline-block;
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-family: inherit;
+      color: #374151;
+      line-height: 1.4;
+    }
+    .fb-shortcuts-note {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: #888;
+      line-height: 1.4;
     }
   `;
   document.head.appendChild(style);

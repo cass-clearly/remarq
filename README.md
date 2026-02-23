@@ -172,13 +172,29 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 - **Text anchoring** — annotations are anchored to specific text passages using TextQuoteSelectors (via Apache Annotator), so highlights survive minor edits
 - **Threaded replies** — discuss any annotation
 - **Resolve/unresolve** — mark feedback as addressed
-- **Keyboard shortcuts** — Cmd+Enter to submit
+- **Keyboard shortcuts** — full keyboard navigation for the sidebar
 - **One script tag** — drop-in integration for any HTML page
 - **Agent-ready API** — structured feedback your AI can consume and act on
 
 ## Documentation
 
 - **[Best Practices Guide](docs/best-practices.md)** — Deployment configurations, content selector strategies, agent integration patterns, multi-reviewer workflows, and document lifecycle management.
+
+## Keyboard Shortcuts
+
+The following keyboard shortcuts are available (they are disabled when focus is in an input field, textarea, or contenteditable element):
+
+| Key | Action |
+|-----|--------|
+| `s` | Toggle sidebar open/closed |
+| `Esc` | Close the sidebar |
+| `j` | Move to next comment thread |
+| `k` | Move to previous comment thread |
+| `Enter` | Reply to the focused comment thread |
+| `Cmd+Enter` / `Ctrl+Enter` | Submit a comment or reply (when typing in a text field) |
+| `?` | Toggle keyboard shortcuts help |
+
+Press the `⌨` button in the sidebar header to see shortcuts at any time.
 
 ## The Bottom Line
 
