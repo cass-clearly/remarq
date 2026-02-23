@@ -10,11 +10,13 @@ fi
 
 echo "feedback-layer/src/ changes detected — rebuilding bundle..."
 
-cd feedback-layer && npm run build
+# Use the root build script (not feedback-layer's) because it handles the full
+# pipeline: build the bundle AND copy it to serve/feedback-layer.js where the
+# server actually serves it from.
+npm run build
 if [ $? -ne 0 ]; then
   echo "ERROR: feedback-layer build failed. Commit aborted."
   exit 1
 fi
 
-cd ..
 git add serve/feedback-layer.js

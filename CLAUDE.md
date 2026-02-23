@@ -53,7 +53,7 @@ Whenever you modify any JS files in `feedback-layer/src/`, you **must** rebuild 
 cd feedback-layer && npm run build
 ```
 
-This updates `serve/feedback-layer.js` which is what the server actually serves. If you skip this step, your changes will exist in source but won't be visible to users. Always commit the rebuilt `serve/feedback-layer.js` alongside your source changes.
+This updates `serve/feedback-layer.js` which is what the server actually serves. If you skip this step, your changes will exist in source but won't be visible to users. Always rebuild before committing to verify your changes work.
 
 A pre-commit hook in `.githooks/pre-commit` handles this automatically — it detects staged changes in `feedback-layer/src/`, runs the build, and stages the updated bundle. The hook is enabled by the `prepare` script on `npm install`, or manually:
 
