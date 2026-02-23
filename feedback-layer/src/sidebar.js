@@ -790,16 +790,27 @@ function injectStyles() {
       height: 0;
       border-left: 8px solid transparent;
       border-right: 8px solid transparent;
-      border-top: 8px solid #7c3aed;
-      filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1));
+      border-bottom: 8px solid #7c3aed;
+      filter: drop-shadow(0 -2px 2px rgba(0,0,0,0.1));
     }
     .fb-annotate-tooltip:hover {
       background: #6d28d9;
-      transform: translateY(-2px);
+      transform: translateY(2px);
       box-shadow: 0 6px 16px rgba(124, 58, 237, 0.5), 0 2px 6px rgba(0,0,0,0.15);
     }
     .fb-annotate-tooltip:hover::after {
-      border-top-color: #6d28d9;
+      border-bottom-color: #6d28d9;
+    }
+    @media (pointer: coarse) {
+      .fb-annotate-tooltip {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 15px;
+      }
+      .fb-annotate-tooltip svg {
+        width: 18px;
+        height: 18px;
+      }
     }
     @keyframes fb-tooltip-appear {
       from {
