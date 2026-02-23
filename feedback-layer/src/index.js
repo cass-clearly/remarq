@@ -32,7 +32,6 @@ import {
   openSidebar,
   getCommenter,
 } from "./sidebar.js";
-import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
 
 let _root = null;      // content root element
@@ -123,9 +122,6 @@ function init() {
 
       // Load existing comments
       loadComments();
-
-      // AI revision UI
-      initAuthorUI(config, () => _comments);
     } catch (err) {
       console.error("[feedback-layer] Boot failed:", err);
     }
