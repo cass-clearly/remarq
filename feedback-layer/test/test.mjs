@@ -320,6 +320,42 @@ describe("color utils", async () => {
   });
 });
 
+// ── print-hide ───────────────────────────────────────────────────────
+
+describe("injectPrintHideStyles", async () => {
+  const { injectPrintHideStyles } = await import("../src/utils/print-hide.js");
+
+  // Minimal DOM shim for Node environment
+  const origDocument = globalThis.document;
+
+  it("creates a style element with print media rule", () => {
+    const appended = [];
+    globalThis.document = {
+      createElement(tag) {
+        const el = { tagName: tag, attrs: {}, textContent: "" };
+        el.setAttribute = (k, v) => { el.attrs[k] = v; };
+        return el;
+      },
+      head: { appendChild(el) { appended.push(el); } },
+    };
+
+    try {
+      const style = injectPrintHideStyles();
+
+      assert.equal(style.tagName, "style");
+      assert.equal(style.attrs["data-remarq-print"], "true");
+      assert.ok(style.textContent.includes("@media print"));
+      assert.ok(style.textContent.includes('class^="fb-"'));
+      assert.ok(style.textContent.includes('class^="hf-"'));
+      assert.ok(style.textContent.includes("display:none!important"));
+      assert.equal(appended.length, 1);
+      assert.equal(appended[0], style);
+    } finally {
+      globalThis.document = origDocument;
+    }
+  });
+});
+
 // ── api (setBaseUrl only — no fetch mocks) ────────────────────────────
 
 describe("api", async () => {

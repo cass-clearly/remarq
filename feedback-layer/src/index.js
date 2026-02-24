@@ -35,6 +35,7 @@ import {
 import { initAuthorUI } from "./ui.js";
 import { showToast } from "./toast.js";
 import { resolveColor, DEFAULT_COLOR } from "./utils/color.js";
+import { injectPrintHideStyles } from "./utils/print-hide.js";
 
 let _root = null;      // content root element
 let _docUri = null;     // canonical URI for this document
@@ -94,6 +95,7 @@ function init() {
 
   const boot = async () => {
     try {
+      injectPrintHideStyles();
       _root = document.querySelector(config.contentSelector) || document.body;
       _docUri = config.documentUri || window.location.origin + window.location.pathname;
       _docId = config.documentId || null;
