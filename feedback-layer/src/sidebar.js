@@ -196,9 +196,9 @@ function _setActiveThread(index) {
   card.classList.add("fb-cmt-active");
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  // Also activate the highlight in the document
+  // Also activate the highlight in the document (skip for orphaned comments)
   const thread = card.closest(".fb-thread");
-  if (thread?.dataset.commentId) {
+  if (thread?.dataset.commentId && _lastAnchoredIds.has(thread.dataset.commentId)) {
     setActiveHighlight(thread.dataset.commentId);
     scrollToHighlight(thread.dataset.commentId);
   }
@@ -408,7 +408,7 @@ export function showCommentForm(quote) {
 
 /**
  * Render the full comment list with threaded replies.
- * Only shows comments whose text was successfully found in the document.
+ * Anchored comments appear first (sorted by document position), orphaned comments at the bottom.
  *
  * @param {Array} comments - All comments
  * @param {Set} anchoredIds - Set of comment IDs that successfully anchored to text
@@ -422,63 +422,52 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
 
   const { topLevel, repliesByParent } = threadComments(comments);
 
-  // Sort top-level comments by document position
-  const sortedTopLevel = topLevel.slice().sort((a, b) => {
+  // Separate anchored and orphaned comments
+  const anchored = [];
+  const orphaned = [];
+  for (const ann of topLevel) {
+    if (anchoredIds.has(ann.id)) {
+      anchored.push(ann);
+    } else {
+      orphaned.push(ann);
+    }
+  }
+
+  // Sort anchored comments by document position
+  anchored.sort((a, b) => {
     const rangeA = commentRanges.get(a.id);
     const rangeB = commentRanges.get(b.id);
-
-    // If either doesn't have a range, keep original order
     if (!rangeA || !rangeB) return 0;
-
-    // Compare positions using Range.compareBoundaryPoints
     return rangeA.compareBoundaryPoints(Range.START_TO_START, rangeB);
   });
 
-  // Filter to only show comments that:
-  // 1. Successfully anchored (text found in document), OR
-  // 2. Are closed and "show closed" is enabled
-  const anchoredTopLevel = sortedTopLevel.filter((a) => {
-    const hasAnchor = anchoredIds.has(a.id);
-    const isClosed = a.status === 'closed';
+  // Anchored first, then orphaned at the bottom
+  const sortedTopLevel = [...anchored, ...orphaned];
 
-    // Show if anchored, or if closed and user wants to see closed
-    return hasAnchor || (isClosed && _showResolved);
-  });
-
-  // Apply closed filter on top of anchored filter
+  // Apply closed filter
   const visibleTopLevel = _showResolved
-    ? anchoredTopLevel
-    : anchoredTopLevel.filter((a) => a.status !== 'closed');
+    ? sortedTopLevel
+    : sortedTopLevel.filter((a) => a.status !== 'closed');
 
   if (sortedTopLevel.length === 0) {
     _listEl.innerHTML = `<div class="fb-empty">No comments yet. Select text to add one.</div>`;
     return;
   }
 
-  // Calculate orphaned comments (text no longer exists in document)
-  const orphanedCount = sortedTopLevel.filter((a) => !anchoredIds.has(a.id) && a.status !== 'closed').length;
-
   if (visibleTopLevel.length === 0) {
-    if (orphanedCount > 0) {
-      _listEl.innerHTML = `<div class="fb-empty">
-        ${anchoredTopLevel.length} comment(s) resolved.
-        ${orphanedCount > 0 ? `<br>${orphanedCount} comment(s) not shown because their quoted text no longer exists in the document.` : ''}
-        <br>Check "Show closed" to see resolved comments.
-      </div>`;
-    } else {
-      _listEl.innerHTML = `<div class="fb-empty">All ${sortedTopLevel.length} comment(s) resolved. Check "Show closed" to see them.</div>`;
-    }
+    _listEl.innerHTML = `<div class="fb-empty">All ${sortedTopLevel.length} comment(s) resolved. Check "Show closed" to see them.</div>`;
     return;
   }
 
   for (const ann of visibleTopLevel) {
+    const isOrphaned = !anchoredIds.has(ann.id);
     const thread = document.createElement("div");
     thread.className = "fb-thread";
     thread.setAttribute("role", "listitem");
     thread.setAttribute("tabindex", "0");
     thread.dataset.commentId = ann.id;
 
-    thread.appendChild(buildCard(ann, false));
+    thread.appendChild(buildCard(ann, false, isOrphaned));
 
     // Render replies
     const replies = repliesByParent.get(ann.id) || [];
@@ -509,15 +498,21 @@ export function renderComments(comments, anchoredIds = new Set(), commentRanges 
   }
 }
 
-function buildCard(ann, isReply) {
+function buildCard(ann, isReply, isOrphaned = false) {
   const isClosed = ann.status === 'closed';
   const card = document.createElement("div");
   card.className = "fb-cmt-card"
     + (isClosed ? " fb-cmt-closed" : "")
-    + (isReply ? " fb-cmt-reply" : "");
+    + (isReply ? " fb-cmt-reply" : "")
+    + (isOrphaned ? " fb-cmt-orphaned" : "");
   card.dataset.id = ann.id;
 
+  const orphanedQuoteHtml = (isOrphaned && ann.quote)
+    ? `<div class="fb-cmt-orphaned-quote">Content Deleted: "${escapeHtml(truncate(ann.quote, 120))}"</div>`
+    : "";
+
   card.innerHTML = `
+    ${orphanedQuoteHtml}
     <div class="fb-cmt-body">${escapeHtml(ann.body)}</div>
     <div class="fb-cmt-meta">
       <span class="fb-cmt-author">${escapeHtml(ann.author)}</span>
@@ -536,8 +531,10 @@ function buildCard(ann, isReply) {
   if (!isReply) {
     card.addEventListener("click", (e) => {
       if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-reactions")) return;
-      setActiveHighlight(ann.id);
-      scrollToHighlight(ann.id);
+      if (!isOrphaned) {
+        setActiveHighlight(ann.id);
+        scrollToHighlight(ann.id);
+      }
       _listEl
         .querySelectorAll(".fb-cmt-card")
         .forEach((c) => c.classList.remove("fb-cmt-active"));
@@ -1094,6 +1091,18 @@ function injectStyles() {
       font-style: italic;
       margin-bottom: 6px;
       line-height: 1.4;
+    }
+    .fb-cmt-orphaned-quote {
+      font-size: 11px;
+      color: var(--remarq-text-faint);
+      font-style: italic;
+      margin-bottom: 6px;
+      line-height: 1.4;
+      padding: 4px 8px;
+      border-left: 2px solid var(--remarq-danger);
+      background: var(--remarq-error-bg);
+      border-radius: 0 4px 4px 0;
+      text-decoration: line-through;
     }
     .fb-cmt-body {
       font-size: 13px;
