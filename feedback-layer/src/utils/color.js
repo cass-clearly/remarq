@@ -2,20 +2,10 @@
  * Color presets and validation for highlight colors.
  */
 
-export const COLOR_PRESETS = {
-  yellow:  "#ffd400",
-  red:     "#ff6b6b",
-  green:   "#51cf66",
-  blue:    "#339af0",
-  purple:  "#9775fa",
-  pink:    "#f06595",
-  orange:  "#ff922b",
-  teal:    "#20c997",
-};
+// Re-export shared constants (single source of truth)
+export { COLOR_PRESETS, DEFAULT_COLOR, HEX_COLOR_REGEX } from "../../../shared/color-constants.js";
 
-export const DEFAULT_COLOR = "#ffd400";
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+import { COLOR_PRESETS, HEX_COLOR_REGEX } from "../../../shared/color-constants.js";
 
 /**
  * Resolve a color value to a hex code.
@@ -26,7 +16,7 @@ export function resolveColor(value) {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim().toLowerCase();
   if (COLOR_PRESETS[trimmed]) return COLOR_PRESETS[trimmed];
-  if (HEX_RE.test(trimmed)) return trimmed;
+  if (HEX_COLOR_REGEX.test(trimmed)) return trimmed;
   return null;
 }
 

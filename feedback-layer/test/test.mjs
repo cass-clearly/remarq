@@ -275,7 +275,7 @@ describe("color utils", async () => {
   it("resolves preset names to hex codes", () => {
     assert.equal(resolveColor("yellow"), "#ffd400");
     assert.equal(resolveColor("red"), "#ff6b6b");
-    assert.equal(resolveColor("teal"), "#20c997");
+    assert.equal(resolveColor("orange"), "#ff922b");
   });
 
   it("resolves preset names case-insensitively", () => {
@@ -304,15 +304,13 @@ describe("color utils", async () => {
   });
 
   it("exports expected presets", () => {
-    assert.equal(Object.keys(COLOR_PRESETS).length, 8);
+    assert.equal(Object.keys(COLOR_PRESETS).length, 6);
     assert.ok(COLOR_PRESETS.yellow);
     assert.ok(COLOR_PRESETS.red);
     assert.ok(COLOR_PRESETS.green);
     assert.ok(COLOR_PRESETS.blue);
     assert.ok(COLOR_PRESETS.purple);
-    assert.ok(COLOR_PRESETS.pink);
     assert.ok(COLOR_PRESETS.orange);
-    assert.ok(COLOR_PRESETS.teal);
   });
 
   it("has a default color matching yellow preset", () => {

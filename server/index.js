@@ -6,6 +6,7 @@ const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
 const { validateColor } = require("./validate-color.js");
+const { PRESET_NAMES } = require("../shared/color-constants.js");
 const path = require("path");
 
 const app = express();
@@ -56,8 +57,10 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
-  // Add color column (idempotent)
+  // Add color column with CHECK constraint (idempotent)
   await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS color TEXT`);
+  await pool.query(`ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_color_check`);
+  await pool.query(`ALTER TABLE comments ADD CONSTRAINT comments_color_check CHECK (color IS NULL OR color IN (${PRESET_NAMES.map(n => `'${n}'`).join(", ")}) OR color ~ '^#[0-9a-fA-F]{6}$')`);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -262,7 +265,7 @@ app.post("/comments", asyncHandler(async (req, res) => {
   if (color !== undefined && color !== null) {
     validatedColor = validateColor(color);
     if (!validatedColor) {
-      return res.status(400).json(errorResponse("color must be a valid hex code (e.g. #ff6b6b) or preset name (yellow, red, green, blue, purple, pink, orange, teal)"));
+      return res.status(400).json(errorResponse(`color must be a valid hex code (e.g. #ff6b6b) or preset name (${PRESET_NAMES.join(", ")})`));
     }
   }
 
@@ -328,7 +331,7 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
     } else {
       const validatedColor = validateColor(color);
       if (!validatedColor) {
-        return res.status(400).json(errorResponse("color must be a valid hex code (e.g. #ff6b6b) or preset name (yellow, red, green, blue, purple, pink, orange, teal)"));
+        return res.status(400).json(errorResponse(`color must be a valid hex code (e.g. #ff6b6b) or preset name (${PRESET_NAMES.join(", ")})`));
       }
       await pool.query("UPDATE comments SET color = $1 WHERE id = $2", [validatedColor, req.params.id]);
     }

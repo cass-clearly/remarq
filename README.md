@@ -145,7 +145,7 @@ Stripe-inspired resource pattern. All responses include an `object` field. **Ful
 | `GET` | `/comments?expand=document` | Hydrate document objects inline |
 | `POST` | `/comments` | Create a comment (set `parent` to reply to an existing comment) |
 | `GET` | `/comments/:id` | Retrieve a comment |
-| `PATCH` | `/comments/:id` | Update body or status (root comments only) |
+| `PATCH` | `/comments/:id` | Update body, status, or color |
 | `DELETE` | `/comments/:id` | Delete a comment and its replies |
 
 Status is a thread-level concept — only root comments have status (`"open"` or `"closed"`). Replies always have `status: null`. The `?status=` filter matches root comments and includes all their replies. Query params can be combined (e.g. `?document=<id>&status=open&expand=document`).
@@ -160,11 +160,39 @@ Status is a thread-level concept — only root comments have status (`"open"` or
   "suffix": "text after",
   "body": "This needs work",
   "author": "Alice",
-  "parent": null
+  "parent": null,
+  "color": "red"
 }
 ```
 
 For replies, set `parent` to the parent comment's ID. Replies don't need `quote`/`prefix`/`suffix`.
+
+### Highlight Colors
+
+Comments support customizable highlight colors. Set `color` on `POST /comments` or update it later with `PATCH /comments/:id`.
+
+**Preset names:** `yellow`, `red`, `green`, `blue`, `purple`, `orange`
+
+**Custom hex:** Any 6-digit hex code, e.g. `"#ff6b6b"`
+
+```bash
+# Create a comment with a color
+curl -X POST http://localhost:3333/comments \
+  -H "Content-Type: application/json" \
+  -d '{"uri":"https://example.com/doc.html","quote":"important text","body":"Needs revision","author":"agent","color":"red"}'
+
+# Update color on an existing comment
+curl -X PATCH http://localhost:3333/comments/cmt_abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"color":"blue"}'
+
+# Clear color (revert to default)
+curl -X PATCH http://localhost:3333/comments/cmt_abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"color":null}'
+```
+
+If omitted, `color` defaults to `null` (the client uses yellow as the default highlight).
 
 ## Features
 

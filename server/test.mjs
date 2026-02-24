@@ -108,7 +108,7 @@ describe("validate-color", async () => {
   it("accepts preset names", () => {
     assert.equal(validateColor("yellow"), "yellow");
     assert.equal(validateColor("red"), "red");
-    assert.equal(validateColor("teal"), "teal");
+    assert.equal(validateColor("orange"), "orange");
   });
 
   it("normalizes preset names to lowercase", () => {
