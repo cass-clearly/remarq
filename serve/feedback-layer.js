@@ -231,13 +231,13 @@ Respond with:
       <button class="fb-btn fb-btn-cancel fb-reply-cancel">Cancel</button>
     </div>
   `;let o=()=>{if(!ze()){let s=B.querySelector(".fb-name-input");s.focus(),s.style.outline="2px solid var(--remarq-danger)",setTimeout(()=>s.style.outline="",2e3);return}let c=a.querySelector("textarea").value.trim();c&&(Zs&&Zs({parent_id:e,comment:c,commenter:ze()}),a.remove(),t.style.display="")};a.querySelector(".fb-reply-submit").addEventListener("click",o);let u=a.querySelector("textarea");u.addEventListener("keydown",c=>{c.key==="Enter"&&(c.metaKey||c.ctrlKey)&&(c.preventDefault(),o())}),a.querySelector(".fb-reply-cancel").addEventListener("click",()=>{a.remove(),t.style.display=""}),r.insertBefore(a,t),u.focus()}function L6(e,r){let t=r.querySelector(".fb-cmt-body"),n=e.body,a=!e.parent_id,o=lt(e.color)||tc||he.DEFAULT_COLOR,u=Object.entries(he.COLOR_PRESETS);t.innerHTML=`
-    <textarea class="fb-form-textarea" rows="3">${sr(n)}</textarea>
     ${a?`<div class="fb-color-picker">
       <label class="fb-color-label">Color</label>
       <div class="fb-color-swatches">
         ${u.map(([f,p])=>`<button type="button" class="fb-color-swatch${p===o?" fb-color-swatch-active":""}" data-color="${p}" title="${f}" style="background:${p};"></button>`).join("")}
       </div>
     </div>`:""}
+    <textarea class="fb-form-textarea" rows="3">${sr(n)}</textarea>
     <div class="fb-form-actions" style="margin-top: 6px;">
       <button class="fb-btn fb-btn-primary fb-edit-save">Save</button>
       <button class="fb-btn fb-btn-cancel fb-edit-cancel">Cancel</button>

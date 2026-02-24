@@ -704,13 +704,13 @@ function showEditForm(ann, card) {
 
   // Replace comment with edit form
   commentEl.innerHTML = `
-    <textarea class="fb-form-textarea" rows="3">${escapeHtml(originalText)}</textarea>
     ${isRootComment ? `<div class="fb-color-picker">
       <label class="fb-color-label">Color</label>
       <div class="fb-color-swatches">
         ${presetEntries.map(([name, hex]) => `<button type="button" class="fb-color-swatch${hex === currentColor ? " fb-color-swatch-active" : ""}" data-color="${hex}" title="${name}" style="background:${hex};"></button>`).join("")}
       </div>
     </div>` : ""}
+    <textarea class="fb-form-textarea" rows="3">${escapeHtml(originalText)}</textarea>
     <div class="fb-form-actions" style="margin-top: 6px;">
       <button class="fb-btn fb-btn-primary fb-edit-save">Save</button>
       <button class="fb-btn fb-btn-cancel fb-edit-cancel">Cancel</button>
