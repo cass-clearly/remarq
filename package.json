@@ -1,6 +1,6 @@
 {
   "name": "remarq",
-  "version": "1.6.0",
+  "version": "2.0.0",
   "private": true,
   "license": "AGPL-3.0",
   "description": "Drop-in annotation and comment layer for any HTML page.",
