@@ -110,6 +110,7 @@ function init() {
         onReply: handleReply,
         onEdit: handleEdit,
         onReaction: handleReaction,
+        onColorChange: handleColorChange,
         defaultColor: _defaultColor,
       });
 
@@ -362,6 +363,34 @@ async function handleEdit(commentId, comment) {
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
     showToast(`Failed to update comment: ${err.message}`, "error");
+  }
+}
+
+async function handleColorChange(commentId, color) {
+  try {
+    const updated = await updateComment(commentId, { color });
+    const idx = _comments.findIndex((a) => a.id === commentId);
+    if (idx !== -1) _comments[idx] = updated;
+
+    // Re-anchor highlight with new color
+    removeHighlights(commentId);
+    const ann = updated;
+    if (ann.status !== "closed") {
+      const range = await rangeFromSelector(
+        { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
+        _root
+      );
+      if (range) {
+        highlightRange(range, ann.id, ann.color);
+        _anchoredIds.add(ann.id);
+        _commentRanges.set(ann.id, range);
+      }
+    }
+
+    renderComments(_comments, _anchoredIds, _commentRanges);
+  } catch (err) {
+    console.error("[feedback-layer] Failed to change color:", err);
+    showToast(`Failed to update color: ${err.message}`, "error");
   }
 }
 

@@ -13,7 +13,7 @@ import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
 import { wrapIndex } from "./utils/keyboard-nav.js";
-import { COLOR_PRESETS, DEFAULT_COLOR } from "./utils/color.js";
+import { COLOR_PRESETS, DEFAULT_COLOR, resolveColor } from "./utils/color.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -28,6 +28,7 @@ let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
 let _onReaction = null;
+let _onColorChange = null;
 let _defaultColor = null;
 let _showResolved = false;
 let _lastComments = [];
@@ -61,13 +62,14 @@ export function getCommenter() {
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction, defaultColor }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction, onColorChange, defaultColor }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
   _onReaction = onReaction;
+  _onColorChange = onColorChange;
   _defaultColor = defaultColor || null;
 
   ensureStyles();
@@ -531,9 +533,31 @@ function buildCard(ann, isReply) {
   const reactionsEl = card.querySelector(".fb-reactions");
   buildReactionBar(reactionsEl, ann);
 
+  // Color swatches for root comments (not replies)
+  if (!isReply) {
+    const currentColor = resolveColor(ann.color) || _defaultColor || DEFAULT_COLOR;
+    const swatchBar = document.createElement("div");
+    swatchBar.className = "fb-card-color-swatches";
+    for (const [name, hex] of Object.entries(COLOR_PRESETS)) {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "fb-card-color-swatch" + (hex === currentColor ? " fb-card-color-swatch-active" : "");
+      swatch.dataset.color = hex;
+      swatch.title = name;
+      swatch.style.background = hex;
+      swatch.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (hex === currentColor) return;
+        if (_onColorChange) _onColorChange(ann.id, hex);
+      });
+      swatchBar.appendChild(swatch);
+    }
+    card.appendChild(swatchBar);
+  }
+
   if (!isReply) {
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-reactions")) return;
+      if (e.target.closest(".fb-cmt-delete") || e.target.closest(".fb-cmt-resolve") || e.target.closest(".fb-cmt-edit") || e.target.closest(".fb-reactions") || e.target.closest(".fb-card-color-swatches")) return;
       setActiveHighlight(ann.id);
       scrollToHighlight(ann.id);
       _listEl
@@ -1367,6 +1391,29 @@ function injectStyles() {
     .fb-color-swatch-active {
       border-color: #333;
       box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+    }
+
+    /* Card-level color swatches (change existing comment color) */
+    .fb-card-color-swatches {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .fb-card-color-swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      padding: 0;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .fb-card-color-swatch:hover {
+      transform: scale(1.2);
+    }
+    .fb-card-color-swatch-active {
+      border-color: var(--remarq-text);
+      box-shadow: 0 0 0 1px var(--remarq-shadow);
     }
 
     /* Annotate tooltip (appears on text selection) */

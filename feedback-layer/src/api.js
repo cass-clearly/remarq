@@ -58,11 +58,14 @@ export async function createComment({
   return res.json();
 }
 
-export async function updateComment(id, { body }) {
+export async function updateComment(id, { body, color }) {
+  const payload = {};
+  if (body !== undefined) payload.body = body;
+  if (color !== undefined) payload.color = color;
   const res = await fetch(`${_baseUrl}/comments/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(payload),
   });
   await throwIfNotOk(res, "Failed to update comment");
   return res.json();
