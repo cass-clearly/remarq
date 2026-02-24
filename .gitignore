@@ -26,3 +26,6 @@ coverage/
 
 # Temp files
 *.tmp.*
+
+.preview-state/
+.preview-worktrees/
