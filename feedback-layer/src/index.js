@@ -354,11 +354,31 @@ async function handleReply({ parent_id, comment, commenter }) {
   }
 }
 
-async function handleEdit(commentId, comment) {
+async function handleEdit(commentId, comment, color) {
   try {
-    const updated = await updateComment(commentId, { body: comment });
+    const payload = { body: comment };
+    if (color !== undefined) payload.color = color;
+    const updated = await updateComment(commentId, payload);
     const idx = _comments.findIndex((a) => a.id === commentId);
     if (idx !== -1) _comments[idx] = updated;
+
+    // Re-anchor highlight with new color if color changed
+    if (color !== undefined) {
+      removeHighlights(commentId);
+      const ann = updated;
+      if (ann.status !== "closed") {
+        const range = await rangeFromSelector(
+          { exact: ann.quote, prefix: ann.prefix, suffix: ann.suffix },
+          _root
+        );
+        if (range) {
+          highlightRange(range, ann.id, ann.color);
+          _anchoredIds.add(ann.id);
+          _commentRanges.set(ann.id, range);
+        }
+      }
+    }
+
     renderComments(_comments, _anchoredIds, _commentRanges);
   } catch (err) {
     console.error("[feedback-layer] Failed to edit comment:", err);
