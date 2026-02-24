@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.0.1 (2026-02-24)
+
+### Fixes
+
+- Add shared/ directory to Dockerfile for v2.0.0 (#190)
+- Inject print-hide CSS to fix iOS Safari print preview (#191)
+
 ## v2.0.0 (2026-02-24)
 
 ### Features
