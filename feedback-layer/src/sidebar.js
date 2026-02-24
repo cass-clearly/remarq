@@ -567,6 +567,7 @@ const REACTION_EMOJI = {
   "🎉": "Celebrate",
   "🤔": "Question",
   "😂": "Funny",
+  "➕": "Plus One",
 };
 const EMOJI_SET = Object.keys(REACTION_EMOJI);
 
