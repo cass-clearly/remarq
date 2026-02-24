@@ -196,9 +196,9 @@ function _setActiveThread(index) {
   card.classList.add("fb-cmt-active");
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  // Also activate the highlight in the document
+  // Also activate the highlight in the document (skip for orphaned comments)
   const thread = card.closest(".fb-thread");
-  if (thread?.dataset.commentId) {
+  if (thread?.dataset.commentId && _lastAnchoredIds.has(thread.dataset.commentId)) {
     setActiveHighlight(thread.dataset.commentId);
     scrollToHighlight(thread.dataset.commentId);
   }
@@ -408,7 +408,7 @@ export function showCommentForm(quote) {
 
 /**
  * Render the full comment list with threaded replies.
- * Only shows comments whose text was successfully found in the document.
+ * Anchored comments appear first (sorted by document position), orphaned comments at the bottom.
  *
  * @param {Array} comments - All comments
  * @param {Set} anchoredIds - Set of comment IDs that successfully anchored to text
@@ -503,7 +503,8 @@ function buildCard(ann, isReply, isOrphaned = false) {
   const card = document.createElement("div");
   card.className = "fb-cmt-card"
     + (isClosed ? " fb-cmt-closed" : "")
-    + (isReply ? " fb-cmt-reply" : "");
+    + (isReply ? " fb-cmt-reply" : "")
+    + (isOrphaned ? " fb-cmt-orphaned" : "");
   card.dataset.id = ann.id;
 
   const orphanedQuoteHtml = (isOrphaned && ann.quote)
