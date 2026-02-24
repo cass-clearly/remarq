@@ -93,6 +93,7 @@ Configure via `data-` attributes on the script tag:
 | `data-content-selector` | `body` | CSS selector for the annotatable content area |
 | `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
 | `data-theme` | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
+| `data-default-color` | `null` (yellow) | Default highlight color for new comments. Accepts a preset name (`red`, `blue`, etc.) or a 6-digit hex code (`#ff6b6b`). |
 
 ## Production
 
@@ -169,17 +170,37 @@ For replies, set `parent` to the parent comment's ID. Replies don't need `quote`
 
 ### Highlight Colors
 
-Comments support customizable highlight colors. Set `color` on `POST /comments` or update it later with `PATCH /comments/:id`.
+Comments support customizable highlight colors. Set `color` on `POST /comments` or update it later with `PATCH /comments/:id`. Colors are validated on both the client and server.
 
-**Preset names:** `yellow`, `red`, `green`, `blue`, `purple`, `orange`
+#### Preset names
 
-**Custom hex:** Any 6-digit hex code, e.g. `"#ff6b6b"`
+| Name | Hex | Preview |
+|------|-----|---------|
+| `yellow` | `#ffd400` | Default highlight color |
+| `red` | `#ff6b6b` | |
+| `green` | `#51cf66` | |
+| `blue` | `#339af0` | |
+| `purple` | `#9775fa` | |
+| `pink` | `#f06595` | |
+| `orange` | `#ff922b` | |
+| `teal` | `#20c997` | |
+
+You can also pass any 6-digit hex code directly (e.g. `"#ff6b6b"`). The database enforces a CHECK constraint — values must be a preset name, a valid `#rrggbb` hex code, or `null`.
+
+#### Usage from agents
+
+Agents writing comments via the API can use colors to visually categorize feedback — for example, red for errors, blue for suggestions, green for approvals.
 
 ```bash
-# Create a comment with a color
+# Create a comment with a preset color
 curl -X POST http://localhost:3333/comments \
   -H "Content-Type: application/json" \
   -d '{"uri":"https://example.com/doc.html","quote":"important text","body":"Needs revision","author":"agent","color":"red"}'
+
+# Create a comment with a hex color
+curl -X POST http://localhost:3333/comments \
+  -H "Content-Type: application/json" \
+  -d '{"uri":"https://example.com/doc.html","quote":"looks good","body":"Approved","author":"agent","color":"#51cf66"}'
 
 # Update color on an existing comment
 curl -X PATCH http://localhost:3333/comments/cmt_abc123 \
@@ -193,6 +214,21 @@ curl -X PATCH http://localhost:3333/comments/cmt_abc123 \
 ```
 
 If omitted, `color` defaults to `null` (the client uses yellow as the default highlight).
+
+#### Client-side default color
+
+Set a default highlight color for all new comments on a page using the `data-default-color` attribute on the script tag:
+
+```html
+<script
+  src="http://localhost:3333/feedback-layer.js"
+  data-api-url="http://localhost:3333"
+  data-content-selector="article"
+  data-default-color="blue"
+></script>
+```
+
+Accepts any preset name or hex code. Users can still override the color per-comment using the color picker in the sidebar.
 
 ## Features
 

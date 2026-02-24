@@ -8,7 +8,9 @@ const COLOR_PRESETS = {
   green:   "#51cf66",
   blue:    "#339af0",
   purple:  "#9775fa",
+  pink:    "#f06595",
   orange:  "#ff922b",
+  teal:    "#20c997",
 };
 
 const DEFAULT_COLOR = COLOR_PRESETS["yellow"];
