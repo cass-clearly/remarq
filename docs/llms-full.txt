@@ -1,0 +1,469 @@
+# Remarq
+
+> Lightweight, self-hosted document annotation tool for the agent era. Drop a script tag into any HTML page — reviewers highlight text and leave threaded comments, then AI agents poll the API, revise documents, and resolve comments automatically.
+
+Remarq turns human feedback into structured API data that AI agents can consume and act on. No accounts required. One script tag integration. Works on any HTML page — blogs, docs, marketing sites, contracts. Not trapped in a proprietary editor.
+
+## Installation
+
+### Script Tag (client-side)
+
+Add to any HTML page:
+
+```html
+<script
+  src="SERVER/feedback-layer.js"
+  data-api-url="SERVER"
+  data-content-selector="article"
+></script>
+```
+
+Replace `SERVER` with your Remarq backend URL (e.g., `http://localhost:3333` or `https://remarq.example.com`).
+
+### Docker Compose (recommended for production)
+
+```bash
+git clone https://github.com/cass-clearly/remarq.git
+cd remarq
+echo "POSTGRES_PASSWORD=a-strong-random-password" > .env
+docker compose -f docker-compose.remarq.yml up --build -d
+```
+
+Backend runs on port 3333.
+
+### npm (bring your own Postgres)
+
+```bash
+npx @csalvato/remarq-server
+```
+
+Or manually:
+
+```bash
+npm install --prefix server
+DATABASE_URL=postgres://user:pass@localhost:5432/remarq node server/index.js
+```
+
+## Configuration
+
+### Script Tag Attributes
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `data-api-url` | `""` (same origin) | URL of the Remarq backend |
+| `data-content-selector` | `body` | CSS selector for the annotatable content area |
+| `data-document-uri` | current page URL | Override the URI used to store/fetch annotations |
+| `data-theme` | `"auto"` | Color theme: `"auto"` (follows OS), `"dark"`, or `"light"` |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql://postgres@localhost/postgres` | PostgreSQL connection string |
+| `PORT` | `3333` | Port the server listens on |
+| `POSTGRES_PASSWORD` | *(required in Docker)* | Password for the bundled Postgres container |
+
+## API Reference
+
+Base URL: `http://localhost:3333` (or your deployed server URL).
+
+All responses include an `object` field. IDs are prefixed strings (`doc_`, `cmt_`). Timestamps are ISO 8601 UTC. HTML in request bodies is stripped for security. URIs are normalized automatically (lowercased scheme/host, sorted query params, removed fragments).
+
+### Error Format
+
+All errors follow this structure:
+
+```json
+{
+  "error": {
+    "message": "Description of what went wrong"
+  }
+}
+```
+
+Common status codes: `200 OK`, `201 Created`, `400 Bad Request`, `404 Not Found`, `500 Internal Server Error`.
+
+---
+
+### GET /health
+
+Check if the server is running.
+
+**Response (200):**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### GET /documents
+
+List all documents.
+
+**Response (200):**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "doc_k3mXp9q2aBvN",
+      "object": "document",
+      "uri": "https://example.com/article",
+      "created_at": "2026-02-21T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### POST /documents
+
+Create a new document (or return existing if URI already exists).
+
+**Request Body:**
+```json
+{
+  "uri": "https://example.com/article"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "doc_k3mXp9q2aBvN",
+  "object": "document",
+  "uri": "https://example.com/article",
+  "created_at": "2026-02-21T10:30:00.000Z"
+}
+```
+
+Returns `200 OK` with the existing document if the URI already exists. Returns `400` if URI is missing.
+
+---
+
+### GET /documents/:id
+
+Get a single document by ID.
+
+**Response (200):**
+```json
+{
+  "id": "doc_k3mXp9q2aBvN",
+  "object": "document",
+  "uri": "https://example.com/article",
+  "created_at": "2026-02-21T10:30:00.000Z"
+}
+```
+
+Returns `404` if not found.
+
+---
+
+### DELETE /documents/:id
+
+Delete a document and all its comments.
+
+**Response (200):** Returns the deleted document object. Returns `404` if not found.
+
+Deleting a document cascades to all comments on that document.
+
+---
+
+### GET /comments
+
+List comments with optional filtering.
+
+**Query Parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `document` | Filter by document ID |
+| `uri` | Filter by document URI (alternative to `document`) |
+| `status` | Filter by status: `open` or `closed` |
+| `expand` | Set to `document` to hydrate document objects |
+
+Query params can be combined (e.g., `?document=<id>&status=open&expand=document`).
+
+**Response (200):**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "cmt_abc123",
+      "object": "comment",
+      "document": "doc_k3mXp9q2aBvN",
+      "quote": "selected text",
+      "prefix": "context before",
+      "suffix": "context after",
+      "body": "This is a comment",
+      "author": "Alice",
+      "status": "open",
+      "parent": null,
+      "created_at": "2026-02-21T10:35:00.000Z"
+    },
+    {
+      "id": "cmt_def456",
+      "object": "comment",
+      "document": "doc_k3mXp9q2aBvN",
+      "quote": null,
+      "prefix": null,
+      "suffix": null,
+      "body": "This is a reply",
+      "author": "Bob",
+      "status": null,
+      "parent": "cmt_abc123",
+      "created_at": "2026-02-21T10:40:00.000Z"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Status is a thread-level concept — only root comments have status (`"open"` or `"closed"`). Replies always have `status: null`.
+- When filtering by status, replies to matching top-level comments are always included.
+- `expand=document` replaces the document ID string with the full document object.
+
+---
+
+### POST /comments
+
+Create a new comment or reply.
+
+**Request Body (top-level comment):**
+```json
+{
+  "uri": "https://example.com/article",
+  "quote": "selected text from the page",
+  "prefix": "text before selection",
+  "suffix": "text after selection",
+  "body": "This is my comment",
+  "author": "Alice"
+}
+```
+
+**Request Body (reply):**
+```json
+{
+  "document": "doc_k3mXp9q2aBvN",
+  "parent": "cmt_abc123",
+  "body": "This is a reply",
+  "author": "Bob"
+}
+```
+
+**Required fields:**
+- `body` — Comment text
+- `author` — Author name
+- `uri` OR `document` — Document URI or ID
+- `quote` — Required for top-level comments, not for replies
+
+**Optional fields:**
+- `prefix` — Text context before the quote
+- `suffix` — Text context after the quote
+- `parent` — Parent comment ID (makes this a reply)
+
+**Response (201 Created):**
+```json
+{
+  "id": "cmt_abc123",
+  "object": "comment",
+  "document": "doc_k3mXp9q2aBvN",
+  "quote": "selected text from the page",
+  "prefix": "text before selection",
+  "suffix": "text after selection",
+  "body": "This is my comment",
+  "author": "Alice",
+  "status": "open",
+  "parent": null,
+  "created_at": "2026-02-21T10:35:00.000Z"
+}
+```
+
+**Notes:**
+- If using `uri`, the document is auto-created if it doesn't exist.
+- Top-level comments default to `status: "open"`.
+- Replies have `status: null` and cannot be resolved independently.
+- HTML tags in `body` and `author` are stripped for safety.
+
+**Errors:** `400` for missing required fields, `404` if referenced document ID doesn't exist.
+
+---
+
+### GET /comments/:id
+
+Get a single comment by ID.
+
+**Query Parameters:**
+- `expand` — Set to `document` to hydrate document object
+
+**Response (200):**
+```json
+{
+  "id": "cmt_abc123",
+  "object": "comment",
+  "document": "doc_k3mXp9q2aBvN",
+  "quote": "selected text",
+  "prefix": null,
+  "suffix": null,
+  "body": "This is my comment",
+  "author": "Alice",
+  "status": "open",
+  "parent": null,
+  "created_at": "2026-02-21T10:35:00.000Z"
+}
+```
+
+Returns `404` if not found.
+
+---
+
+### PATCH /comments/:id
+
+Update a comment's body or status.
+
+**Request Body:**
+```json
+{
+  "body": "Updated comment text",
+  "status": "closed"
+}
+```
+
+Both fields are optional. `status` accepts `"open"` or `"closed"` and can only be set on top-level comments (not replies).
+
+**Response (200):**
+```json
+{
+  "id": "cmt_abc123",
+  "object": "comment",
+  "document": "doc_k3mXp9q2aBvN",
+  "quote": "selected text",
+  "prefix": null,
+  "suffix": null,
+  "body": "Updated comment text",
+  "author": "Alice",
+  "status": "closed",
+  "parent": null,
+  "created_at": "2026-02-21T10:35:00.000Z"
+}
+```
+
+**Errors:** `400` for invalid status or setting status on a reply, `404` if not found.
+
+---
+
+### DELETE /comments/:id
+
+Delete a comment and all its replies.
+
+**Response (200):** Returns the deleted comment object. Returns `404` if not found.
+
+Deleting a comment cascades to all replies.
+
+---
+
+## Agent Integration
+
+The core agent loop:
+
+1. Fetch open comments: `GET /comments?uri=DOCUMENT_URI&status=open`
+2. Build a prompt from the structured comments (quote anchors feedback to exact text)
+3. Have the agent revise the document
+4. Resolve comments: `PATCH /comments/:id` with `{"status": "closed"}`
+5. Repeat until no open comments remain
+
+### Python Example
+
+```python
+import requests
+
+REMARQ_URL = "https://remarq.example.com"
+DOCUMENT_URI = "https://example.com/docs/proposal.html"
+
+def get_open_comments():
+    resp = requests.get(f"{REMARQ_URL}/comments", params={
+        "uri": DOCUMENT_URI,
+        "status": "open",
+    })
+    resp.raise_for_status()
+    return resp.json()["data"]
+
+def resolve_comment(comment_id):
+    resp = requests.patch(f"{REMARQ_URL}/comments/{comment_id}", json={
+        "status": "closed",
+    })
+    resp.raise_for_status()
+    return resp.json()
+
+def build_prompt(comments):
+    sections = []
+    for c in comments:
+        if c["parent"]:
+            continue
+        replies = [r for r in comments if r["parent"] == c["id"]]
+        section = f'FEEDBACK on "{c["quote"]}":\n  {c["author"]}: {c["body"]}'
+        for r in replies:
+            section += f"\n  {r['author']}: {r['body']}"
+        sections.append(section)
+    return "\n\n".join(sections)
+
+comments = get_open_comments()
+if comments:
+    prompt = build_prompt(comments)
+    # Pass prompt + document content to your AI for revision
+    for c in comments:
+        if not c["parent"]:
+            resolve_comment(c["id"])
+```
+
+### JavaScript Example
+
+```js
+const REMARQ_URL = "https://remarq.example.com";
+const DOCUMENT_URI = "https://example.com/docs/proposal.html";
+
+async function getOpenComments() {
+  const url = new URL("/comments", REMARQ_URL);
+  url.searchParams.set("uri", DOCUMENT_URI);
+  url.searchParams.set("status", "open");
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return (await res.json()).data;
+}
+
+async function resolveComment(commentId) {
+  const res = await fetch(`${REMARQ_URL}/comments/${commentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "closed" }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+const comments = await getOpenComments();
+for (const c of comments) {
+  if (!c.parent) await resolveComment(c.id);
+}
+```
+
+## Best Practices Summary
+
+- **Content selectors:** Always scope `data-content-selector` to the content area (e.g., `article`, `.docs-content`). Avoid `body` — it makes the entire page annotatable including nav, headers, and footers.
+- **Agent comments:** Prefix agent-authored comments with a consistent name like "Agent" so the team can distinguish AI from human feedback.
+- **Resolving:** Only the person/agent who addressed the feedback should resolve the comment.
+- **Conflicting feedback:** If reviewers disagree in a thread without consensus, the agent should reply asking for clarification rather than making a unilateral change.
+- **Document versioning:** Use `data-document-uri` to separate comment namespaces across document versions. Old comments remain accessible via the API.
+- **URI normalization:** URIs are automatically normalized (query params sorted, trailing slashes removed). Use the exact URI returned by the API or query by document ID.
+- **Error handling:** Retry 5xx/network errors with exponential backoff. Don't retry 4xx errors.
+
+## Source
+
+- Repository: https://github.com/cass-clearly/remarq
+- API Docs: https://github.com/cass-clearly/remarq/blob/main/docs/api.md
+- Best Practices: https://github.com/cass-clearly/remarq/blob/main/docs/best-practices.md
+- License: AGPL-3.0 (open source) / Commercial license available

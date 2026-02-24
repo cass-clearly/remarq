@@ -1,0 +1,31 @@
+# Remarq
+
+> Lightweight, self-hosted document annotation tool for the agent era. Drop a script tag into any HTML page — reviewers highlight text and leave threaded comments, then AI agents poll the API, revise documents, and resolve comments automatically.
+
+Remarq turns human feedback into structured API data that AI agents can consume and act on. No accounts required. One script tag integration. Works on any HTML page.
+
+## Docs
+
+- [README](https://github.com/cass-clearly/remarq/blob/main/README.md): Overview, quick start, feature list, and comparison with Google Docs
+- [API Reference](https://github.com/cass-clearly/remarq/blob/main/docs/api.md): Full REST API documentation with request/response schemas, error codes, and curl examples
+- [Best Practices](https://github.com/cass-clearly/remarq/blob/main/docs/best-practices.md): Deployment configs, content selector strategies, agent integration patterns, multi-reviewer workflows
+- [Full LLM Documentation](https://remarq.ing/llms-full.txt): Complete technical reference with all API details inline
+
+## Installation
+
+- [Quick Start](https://github.com/cass-clearly/remarq#quick-start): Clone repo, docker compose up, add script tag
+- [npm Package](https://www.npmjs.com/package/@csalvato/remarq-server): `npx @csalvato/remarq-server`
+- [Docker Compose](https://github.com/cass-clearly/remarq/blob/main/docker-compose.remarq.yml): Production deployment with bundled Postgres
+
+## API Endpoints
+
+- [GET /health](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#health-check): Server health check
+- [GET /documents](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#documents): List all documents
+- [POST /documents](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#post-documents): Create or find a document by URI
+- [GET /comments](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#comments): List and filter comments (by document, URI, status)
+- [POST /comments](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#post-comments): Create a comment or reply
+- [PATCH /comments/:id](https://github.com/cass-clearly/remarq/blob/main/docs/api.md#patch-commentsid): Update body or status (open/closed)
+
+## Source
+
+- [GitHub Repository](https://github.com/cass-clearly/remarq): Source code, issues, and contributions
