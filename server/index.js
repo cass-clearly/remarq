@@ -5,6 +5,8 @@ const { Pool } = require("pg");
 const { insertWithId } = require("./generate-id.js");
 const { normalizeUri } = require("./normalize-uri.js");
 const { sanitize } = require("./sanitize.js");
+const { validateColor } = require("./validate-color.js");
+const { PRESET_NAMES } = require("../shared/color-constants.js");
 const path = require("path");
 
 const app = express();
@@ -55,6 +57,10 @@ async function initSchema() {
   // Allow NULL status for replies (idempotent)
   await pool.query(`ALTER TABLE comments ALTER COLUMN status DROP NOT NULL`);
   await pool.query(`UPDATE comments SET status = NULL WHERE parent IS NOT NULL AND status IS NOT NULL`);
+  // Add color column with CHECK constraint (idempotent)
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS color TEXT`);
+  await pool.query(`ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_color_check`);
+  await pool.query(`ALTER TABLE comments ADD CONSTRAINT comments_color_check CHECK (color IS NULL OR color IN (${PRESET_NAMES.map(n => `'${n}'`).join(", ")}) OR color ~ '^#[0-9a-fA-F]{6}$')`);
 }
 
 // ── Response helpers ────────────────────────────────────────────────
@@ -71,7 +77,7 @@ function formatComment(row) {
     id: row.id, object: "comment", document: row.document,
     quote: row.quote || null, prefix: row.prefix || null, suffix: row.suffix || null,
     body: row.body, author: row.author, status: row.parent ? null : row.status,
-    parent: row.parent || null,
+    parent: row.parent || null, color: row.color || null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -243,7 +249,7 @@ app.get("/comments", asyncHandler(async (req, res) => {
 }));
 
 app.post("/comments", asyncHandler(async (req, res) => {
-  const { uri, document: docId, quote, prefix, suffix, body, author, parent } = req.body;
+  const { uri, document: docId, quote, prefix, suffix, body, author, parent, color } = req.body;
 
   if (!body || !author) {
     return res.status(400).json(errorResponse("body and author are required"));
@@ -253,6 +259,14 @@ app.post("/comments", asyncHandler(async (req, res) => {
   }
   if (!uri && !docId) {
     return res.status(400).json(errorResponse("uri or document is required"));
+  }
+
+  let validatedColor = null;
+  if (color !== undefined && color !== null) {
+    validatedColor = validateColor(color);
+    if (!validatedColor) {
+      return res.status(400).json(errorResponse(`color must be a valid hex code (e.g. #ff6b6b) or preset name (${PRESET_NAMES.join(", ")})`));
+    }
   }
 
   const cleanBody = sanitize(body);
@@ -275,8 +289,8 @@ app.post("/comments", asyncHandler(async (req, res) => {
   const commentStatus = parent ? null : "open";
   const comment = await insertWithId("cmt", async (id) => {
     const { rows } = await pool.query(
-      "INSERT INTO comments (id, document, quote, prefix, suffix, body, author, status, parent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",
-      [id, documentId, quote || "", prefix || null, suffix || null, cleanBody, cleanAuthor, commentStatus, parent || null]
+      "INSERT INTO comments (id, document, quote, prefix, suffix, body, author, status, parent, color) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
+      [id, documentId, quote || "", prefix || null, suffix || null, cleanBody, cleanAuthor, commentStatus, parent || null, validatedColor]
     );
     return rows[0];
   });
@@ -301,7 +315,7 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM comments WHERE id = $1", [req.params.id]);
   if (rows.length === 0) return res.status(404).json(errorResponse("Comment not found"));
 
-  const { body, status } = req.body;
+  const { body, status, color } = req.body;
 
   if (status !== undefined && rows[0].parent) {
     return res.status(400).json(errorResponse("status cannot be set on replies"));
@@ -309,6 +323,18 @@ app.patch("/comments/:id", asyncHandler(async (req, res) => {
 
   if (status !== undefined && status !== "open" && status !== "closed") {
     return res.status(400).json(errorResponse('status must be "open" or "closed"'));
+  }
+
+  if (color !== undefined) {
+    if (color === null) {
+      await pool.query("UPDATE comments SET color = NULL WHERE id = $1", [req.params.id]);
+    } else {
+      const validatedColor = validateColor(color);
+      if (!validatedColor) {
+        return res.status(400).json(errorResponse(`color must be a valid hex code (e.g. #ff6b6b) or preset name (${PRESET_NAMES.join(", ")})`));
+      }
+      await pool.query("UPDATE comments SET color = $1 WHERE id = $2", [validatedColor, req.params.id]);
+    }
   }
 
   if (body !== undefined) {

@@ -13,6 +13,7 @@ import { truncate } from "./utils/truncate.js";
 import { timeAgo } from "./utils/time-ago.js";
 import { initToastContainer } from "./toast.js";
 import { wrapIndex } from "./utils/keyboard-nav.js";
+import { COLOR_PRESETS, DEFAULT_COLOR, resolveColor } from "./utils/color.js";
 
 const SIDEBAR_WIDTH = 320;
 const COMMENTER_KEY = "feedback-layer-commenter";
@@ -27,6 +28,8 @@ let _onResolve = null;
 let _onReply = null;
 let _onEdit = null;
 let _onReaction = null;
+let _onColorChange = null;
+let _defaultColor = null;
 let _showResolved = false;
 let _lastComments = [];
 let _lastAnchoredIds = new Set();
@@ -59,13 +62,15 @@ export function getCommenter() {
  * @param {Function} opts.onEdit - Called with (commentId, comment) when edit saved
  * @param {Function} opts.onReaction - Called with (commentId, emoji) when reaction toggled
  */
-export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction }) {
+export function createSidebar({ onSubmit, onDelete, onResolve, onReply, onEdit, onReaction, onColorChange, defaultColor }) {
   _onSubmit = onSubmit;
   _onDelete = onDelete;
   _onResolve = onResolve;
   _onReply = onReply;
   _onEdit = onEdit;
   _onReaction = onReaction;
+  _onColorChange = onColorChange;
+  _defaultColor = defaultColor || null;
 
   ensureStyles();
 
@@ -333,16 +338,38 @@ export function showCommentForm(quote) {
 
   _pendingQuote = quote;
   _formEl.style.display = "";
+
+  const presetEntries = Object.entries(COLOR_PRESETS);
+  const initialColor = _defaultColor || DEFAULT_COLOR;
+
   _formEl.innerHTML = `
     <div class="fb-form-card">
       <div class="fb-form-quote">"${escapeHtml(truncate(quote, 120))}"</div>
       <textarea class="fb-form-textarea" placeholder="Write your comment..." rows="3"></textarea>
+      <div class="fb-color-picker">
+        <label class="fb-color-label">Color</label>
+        <div class="fb-color-swatches">
+          ${presetEntries.map(([name, hex]) => `<button type="button" class="fb-color-swatch${hex === initialColor ? " fb-color-swatch-active" : ""}" data-color="${hex}" title="${name}" style="background:${hex};"></button>`).join("")}
+        </div>
+      </div>
       <div class="fb-form-actions">
         <button class="fb-btn fb-btn-primary fb-submit-btn">Add Comment</button>
         <button class="fb-btn fb-btn-cancel fb-cancel-btn">Cancel</button>
       </div>
     </div>
   `;
+
+  let selectedColor = initialColor;
+
+  // Color swatch click handlers
+  _formEl.querySelectorAll(".fb-color-swatch").forEach((swatch) => {
+    swatch.addEventListener("click", (e) => {
+      e.preventDefault();
+      _formEl.querySelectorAll(".fb-color-swatch").forEach((s) => s.classList.remove("fb-color-swatch-active"));
+      swatch.classList.add("fb-color-swatch-active");
+      selectedColor = swatch.dataset.color;
+    });
+  });
 
   const textarea = _formEl.querySelector(".fb-form-textarea");
   textarea.focus();
@@ -357,7 +384,7 @@ export function showCommentForm(quote) {
     }
     const comment = textarea.value.trim();
     if (!comment) return;
-    _onSubmit({ comment, commenter: getCommenter() });
+    _onSubmit({ comment, commenter: getCommenter(), color: selectedColor });
     _formEl.style.display = "none";
     _pendingQuote = null;
   };
@@ -670,15 +697,38 @@ function showReplyForm(parentId, threadEl, replyBtn) {
 function showEditForm(ann, card) {
   const commentEl = card.querySelector(".fb-cmt-body");
   const originalText = ann.body;
+  const isRootComment = !ann.parent_id;
+
+  const currentColor = resolveColor(ann.color) || _defaultColor || DEFAULT_COLOR;
+  const presetEntries = Object.entries(COLOR_PRESETS);
 
   // Replace comment with edit form
   commentEl.innerHTML = `
+    ${isRootComment ? `<div class="fb-color-picker">
+      <label class="fb-color-label">Color</label>
+      <div class="fb-color-swatches">
+        ${presetEntries.map(([name, hex]) => `<button type="button" class="fb-color-swatch${hex === currentColor ? " fb-color-swatch-active" : ""}" data-color="${hex}" title="${name}" style="background:${hex};"></button>`).join("")}
+      </div>
+    </div>` : ""}
     <textarea class="fb-form-textarea" rows="3">${escapeHtml(originalText)}</textarea>
     <div class="fb-form-actions" style="margin-top: 6px;">
       <button class="fb-btn fb-btn-primary fb-edit-save">Save</button>
       <button class="fb-btn fb-btn-cancel fb-edit-cancel">Cancel</button>
     </div>
   `;
+
+  let selectedColor = currentColor;
+
+  // Color swatch click handlers
+  commentEl.querySelectorAll(".fb-color-swatch").forEach((swatch) => {
+    swatch.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      commentEl.querySelectorAll(".fb-color-swatch").forEach((s) => s.classList.remove("fb-color-swatch-active"));
+      swatch.classList.add("fb-color-swatch-active");
+      selectedColor = swatch.dataset.color;
+    });
+  });
 
   const textarea = commentEl.querySelector("textarea");
   textarea.focus();
@@ -687,7 +737,8 @@ function showEditForm(ann, card) {
   const saveEdit = () => {
     const newComment = textarea.value.trim();
     if (!newComment) return;
-    if (_onEdit) _onEdit(ann.id, newComment);
+    const colorChanged = isRootComment && selectedColor !== currentColor;
+    if (_onEdit) _onEdit(ann.id, newComment, colorChanged ? selectedColor : undefined);
   };
 
   commentEl.querySelector(".fb-edit-save").addEventListener("click", saveEdit);
@@ -1308,6 +1359,43 @@ function injectStyles() {
       color: var(--remarq-text-secondary);
     }
     .fb-btn-cancel:hover { background: var(--remarq-border-subtle); }
+
+    /* Color picker */
+    .fb-color-picker {
+      margin-bottom: 8px;
+    }
+    .fb-color-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .fb-color-swatches {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .fb-color-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      padding: 0;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .fb-color-swatch:hover {
+      transform: scale(1.15);
+    }
+    .fb-color-swatch-active {
+      border-color: #333;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+    }
+
+
 
     /* Annotate tooltip (appears on text selection) */
     .fb-annotate-tooltip {
