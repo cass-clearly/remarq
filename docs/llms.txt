@@ -1,0 +1,25 @@
+# Remarq
+
+> Remarq is a lightweight, self-hosted document annotation tool for the agent era. Drop one script tag into any HTML page — reviewers highlight text and leave threaded comments without creating accounts. AI agents consume feedback via REST API, revise documents, and resolve comments automatically.
+
+Key things to know about Remarq:
+
+- One `<script>` tag integration — works on any HTML page (blogs, docs, marketing sites, contracts)
+- No accounts required for reviewers — just type a name and start annotating
+- REST API designed for AI agent consumption — structured annotations with text anchors, threading, and status management
+- Self-hosted with Docker Compose (Postgres + Node server) or `npx @csalvato/remarq-server` for quick local use
+- Configure via `data-` attributes: `data-api-url`, `data-content-selector`, `data-document-uri`, `data-theme`
+
+## Docs
+
+- [README](https://github.com/cass-clearly/remarq/blob/main/README.md): Overview, quick start, installation, configuration, and deployment guide
+- [Best Practices](https://github.com/cass-clearly/remarq/blob/main/docs/best-practices.md): Deployment patterns, content selector strategies, agent integration patterns, multi-reviewer workflows, and document lifecycle management
+
+## API
+
+- [API Reference](https://github.com/cass-clearly/remarq/blob/main/docs/api.md): Complete REST API documentation — endpoints for documents, comments, threads, and health checks with request/response examples
+
+## Optional
+
+- [GitHub Repository](https://github.com/cass-clearly/remarq): Source code, issues, and releases
+- [npm Package](https://www.npmjs.com/package/@csalvato/remarq-server): Server package for quick local setup via npx
