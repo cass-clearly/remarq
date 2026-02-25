@@ -372,7 +372,7 @@ export function showCommentForm(quote) {
   });
 
   const textarea = _formEl.querySelector(".fb-form-textarea");
-  textarea.focus();
+  textarea.focus({ preventScroll: true });
 
   const submitComment = () => {
     if (!getCommenter()) {
@@ -402,8 +402,11 @@ export function showCommentForm(quote) {
     _pendingQuote = null;
   });
 
-  // Scroll form into view
-  _formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Scroll form into view within the sidebar (not the host page)
+  const sidebarContent = _formEl.closest(".fb-sidebar-content");
+  if (sidebarContent) {
+    sidebarContent.scrollTop = sidebarContent.scrollHeight;
+  }
 }
 
 /**
