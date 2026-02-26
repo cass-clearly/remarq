@@ -172,6 +172,30 @@ describe("API", async () => {
     });
   });
 
+  // ── Security headers ─────────────────────────────────────────
+
+  describe("security headers", () => {
+    it("sets X-Content-Type-Options", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    });
+
+    it("sets Strict-Transport-Security", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.ok(res.headers.get("strict-transport-security"));
+    });
+
+    it("sets X-Frame-Options", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.headers.get("x-frame-options"), "SAMEORIGIN");
+    });
+
+    it("does not set Content-Security-Policy (disabled for embeds)", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.headers.get("content-security-policy"), null);
+    });
+  });
+
   // ── Documents ─────────────────────────────────────────────────
 
   describe("GET /documents", () => {
