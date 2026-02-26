@@ -11,7 +11,8 @@
     "build": "npm install --prefix feedback-layer && node feedback-layer/build.js && cp feedback-layer/dist/feedback-layer.js serve/feedback-layer.js",
     "test:server": "c8 --check-coverage --lines 80 node --test server/test.mjs",
     "test:client": "c8 --check-coverage --lines 80 --include=feedback-layer/src/utils/** --include=feedback-layer/src/prompt-builder.js node --test feedback-layer/test/test.mjs",
-    "test": "npm run test:server && npm run test:client"
+    "test": "npm run test:server && npm run test:client",
+    "test:perf": "node test/performance/long-documents.test.mjs"
   },
   "devDependencies": {
     "c8": "^10.1.3",
