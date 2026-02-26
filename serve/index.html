@@ -343,6 +343,64 @@ journey
       Mark as resolved: 5: Reviewer
   </pre>
 
+  <h2>Canvas &amp; WebGL Content</h2>
+  <p>
+    Canvas and WebGL render content as pixels, not DOM text nodes. This text around the
+    canvas elements is annotatable, but content rendered <em>inside</em> the canvas is not.
+  </p>
+
+  <h3>Canvas 2D</h3>
+  <canvas id="canvas2d" width="500" height="100"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('canvas2d').getContext('2d');
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, 500, 100);
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText('This text is rendered on Canvas — not selectable!', 20, 55);
+    })();
+  </script>
+
+  <h3>WebGL</h3>
+  <canvas id="webgl" width="500" height="200"></canvas>
+  <script>
+    (function() {
+      const canvas = document.getElementById('webgl');
+      const gl = canvas.getContext('webgl');
+      if (!gl) {
+        canvas.insertAdjacentHTML('afterend', '<p><em>WebGL not supported</em></p>');
+        return;
+      }
+      gl.clearColor(0.95, 0.95, 0.97, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // Minimal spinning triangle
+      const vs = `attribute vec2 p; void main(){gl_Position=vec4(p,0,1);}`;
+      const fs = `precision mediump float; uniform float t; void main(){gl_FragColor=vec4(0.5+0.3*sin(t),0.4,0.9,1);}`;
+      function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}
+      const prg=gl.createProgram();
+      gl.attachShader(prg,sh(gl.VERTEX_SHADER,vs));
+      gl.attachShader(prg,sh(gl.FRAGMENT_SHADER,fs));
+      gl.linkProgram(prg);gl.useProgram(prg);
+      const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      const loc=gl.getAttribLocation(prg,'p');gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+      const tLoc=gl.getUniformLocation(prg,'t');
+      function draw(t){
+        const a=t*0.002,c=Math.cos(a),s=Math.sin(a);
+        gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0.5*c,-0.5*s,-0.5*c+0.3*s,0.5*s,-0.5*c-0.3*s]),gl.STATIC_DRAW);
+        gl.uniform1f(tLoc,t*0.001);gl.clear(gl.COLOR_BUFFER_BIT);gl.drawArrays(gl.TRIANGLES,0,3);
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    })();
+  </script>
+
+  <p>
+    <strong>Expected behavior:</strong> Selecting text in this paragraph works normally.
+    The canvas content above cannot be selected or annotated.
+  </p>
+
   <h2>Conclusion</h2>
   <p>
     By combining open web annotation standards with modern AI, we can create a
