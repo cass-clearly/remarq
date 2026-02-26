@@ -134,10 +134,11 @@ describe("validate-color", async () => {
 // ── Integration tests ───────────────────────────────────────────────
 
 describe("API", async () => {
-  let app, pool, initSchema, server, BASE;
+  let app, pool, initSchema, server, BASE, readLimiter, writeLimiter;
 
   before(async () => {
     ({ app, pool, initSchema } = await import("./index.js"));
+    ({ readLimiter, writeLimiter } = await import("./rate-limit.js"));
     await initSchema();
 
     await new Promise((resolve) => {
@@ -159,6 +160,10 @@ describe("API", async () => {
     await pool.query("DELETE FROM comments WHERE parent IS NOT NULL");
     await pool.query("DELETE FROM comments");
     await pool.query("DELETE FROM documents");
+    for (const ip of ["127.0.0.1", "::ffff:127.0.0.1", "::1"]) {
+      readLimiter.resetKey(ip);
+      writeLimiter.resetKey(ip);
+    }
   });
 
   // ── Health check ─────────────────────────────────────────────
@@ -1292,6 +1297,64 @@ describe("API", async () => {
       // Verify comment and reactions are gone
       const res = await fetch(`${BASE}/comments/${cmt.id}`);
       assert.equal(res.status, 404);
+    });
+  });
+
+  // ── Rate limiting ──────────────────────────────────────────────
+
+  describe("Rate limiting", () => {
+    it("returns rate limit headers on GET requests", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.status, 200);
+      assert.ok(res.headers.get("ratelimit-limit"), "expected ratelimit-limit header");
+      assert.ok(res.headers.get("ratelimit-remaining") !== null, "expected ratelimit-remaining header");
+      assert.ok(res.headers.get("ratelimit-reset") !== null, "expected ratelimit-reset header");
+    });
+
+    it("applies read limit (300) to GET requests", async () => {
+      const res = await fetch(`${BASE}/health`);
+      assert.equal(res.headers.get("ratelimit-limit"), "300");
+    });
+
+    it("applies write limit (30) to POST requests", async () => {
+      const res = await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/rate-limit-test" }),
+      });
+      assert.equal(res.headers.get("ratelimit-limit"), "30");
+    });
+
+    it("returns 429 when write limit is exceeded", async () => {
+      let got429 = false;
+      for (let i = 0; i <= 30; i++) {
+        const res = await fetch(`${BASE}/documents`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uri: "https://example.com/rate-limit-flood" }),
+        });
+        if (res.status === 429) {
+          got429 = true;
+          const json = await res.json();
+          assert.equal(json.error.message, "Too many requests, please try again later");
+          break;
+        }
+      }
+      assert.ok(got429, "Expected 429 response after exceeding write limit");
+    });
+
+    it("tracks read and write limits independently", async () => {
+      // Make a POST to consume a write slot
+      await fetch(`${BASE}/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "https://example.com/rate-independent" }),
+      });
+
+      // GET should still show full read limit minus any prior GETs
+      const res = await fetch(`${BASE}/health`);
+      const remaining = parseInt(res.headers.get("ratelimit-remaining"), 10);
+      assert.ok(remaining >= 298, "Read limiter should be nearly full after only write requests");
     });
   });
 });
