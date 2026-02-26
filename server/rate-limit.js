@@ -20,8 +20,10 @@ const writeLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 function rateLimitMiddleware(req, res, next) {
-  if (req.method === "GET") return readLimiter(req, res, next);
+  if (READ_METHODS.has(req.method)) return readLimiter(req, res, next);
   writeLimiter(req, res, next);
 }
 
