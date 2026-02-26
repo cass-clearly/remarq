@@ -230,6 +230,17 @@ Set a default highlight color for all new comments on a page using the `data-def
 
 Accepts any preset name or hex code. Users can still override the color per-comment using the color picker in the sidebar.
 
+### Rate Limiting
+
+All API endpoints are rate-limited per IP address:
+
+| Request type | Limit |
+|-------------|-------|
+| Read (`GET`) | 300 requests/min |
+| Write (`POST`/`PATCH`/`DELETE`) | 30 requests/min |
+
+Rate-limited responses return `429 Too Many Requests` with the standard error format. Responses include `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers.
+
 ## Features
 
 - **No accounts** — reviewers just type their name
