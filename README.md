@@ -42,7 +42,7 @@ That's Remarq. Human judgment in, machine execution out. The feedback cycle is c
 ```bash
 git clone https://github.com/cass-clearly/remarq.git
 cd remarq
-echo "POSTGRES_PASSWORD=remarq" > .env
+echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)" > .env
 docker compose -f docker-compose.remarq.yml up --build
 ```
 
@@ -267,7 +267,7 @@ Your team's feedback shouldn't rot in a Google Docs sidebar. Build the agent loo
 ```bash
 git clone https://github.com/cass-clearly/remarq.git
 cd remarq
-echo "POSTGRES_PASSWORD=remarq" > .env
+echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)" > .env
 docker compose -f docker-compose.remarq.yml up --build
 ```
 
