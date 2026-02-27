@@ -24,6 +24,7 @@ services:
     environment:
       DATABASE_URL: postgres://remarq:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres/remarq
       PORT: "3333"
+      HOST: "0.0.0.0"
     depends_on:
       postgres:
         condition: service_healthy
